@@ -13,11 +13,13 @@ The Alpha Analyzer framework provides a simple, extensible system for validating
 - **ConsoleReporter**: Formats and displays results with color coding
 
 ### Data Flow
-1. **Input Data**: `IncheckAlphaEv.csv` - Alpha signals from PMs (ti,sid,ticker,target)
-2. **Output Data**: `SplitAlphaEv.csv` - Split alphas to traders (ti,sid,ticker,target) 
-3. **Position Data**: `RealtimePosEv.csv` - Current positions (ti,sid,ticker,realtime_pos)
-4. **Validation**: Checkers analyze data per time event (ti)
-5. **Reporting**: Results aggregated and displayed with pass/fail status
+1. **Input Data**: `InCheckAlphaEv.csv` - Raw alpha signals from upstream (event|alphaid|time|ticker|volume)
+2. **Merged Data**: `MergedAlphaEv.csv` - Consolidated upstream alphas (event|alphaid|time|ticker|volume)
+3. **Split Data**: `SplitAlphaEv.csv` - Split alphas to traders (event|alphaid|time|ticker|volume)
+4. **Position Data**: `SplitCtxEv.csv` - Current positions and context (event|alphaid|time|ticker|realtime_pos|...)
+5. **Market Data**: `MarketDataEv.csv` - Market prices (event|alphaid|time|ticker|last_price|prev_close_price) [optional]
+6. **Validation**: Checkers analyze data per time event using pipe-delimited CSV format
+7. **Reporting**: Results aggregated and displayed with pass/fail status
 
 ## Implementing a Custom Checker
 
@@ -36,8 +38,8 @@ class MyCustomChecker(BaseChecker):
     def name(self) -> str:
         return "My Custom Validation"
     
-    def check(self, input_df: pd.DataFrame, output_df: pd.DataFrame, 
-              realtime_pos_df: pd.DataFrame) -> CheckResult:
+    def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame,
+              realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
         # Your validation logic here
         
         return CheckResult(
@@ -58,39 +60,61 @@ class MyCustomChecker(BaseChecker):
 
 You have full access to raw pandas DataFrames with these guaranteed columns:
 
-**Input DataFrame (input_df)**:
-- `ti`: Time event index
-- `sid`: Source ID (PM identifier)
+**InCheck Alpha DataFrame (incheck_alpha_df)** - InCheckAlphaEv.csv:
+- `event`: Event type (InCheckAlphaEv)
+- `alphaid`: Alpha source identifier
+- `time`: Time event index
 - `ticker`: Trading symbol
-- `target`: Alpha target value
+- `volume`: Alpha volume
 
-**Output DataFrame (output_df)**:
-- `ti`: Time event index  
-- `sid`: Destination ID (Trader identifier)
+**Merged DataFrame (merged_df)** - MergedAlphaEv.csv:
+- `event`: Event type (MergedAlphaEv)
+- `alphaid`: Merged alpha identifier
+- `time`: Time event index
 - `ticker`: Trading symbol
-- `target`: Split alpha target value
+- `volume`: Merged alpha volume
 
-**Realtime Position DataFrame (realtime_pos_df)**:
-- `ti`: Time event index
-- `sid`: Trader identifier
+**Split Alpha DataFrame (split_alpha_df)** - SplitAlphaEv.csv:
+- `event`: Event type (SplitAlphaEv)
+- `alphaid`: Split alpha destination identifier
+- `time`: Time event index
+- `ticker`: Trading symbol
+- `volume`: Split alpha volume
+
+**Position DataFrame (realtime_pos_df)** - SplitCtxEv.csv:
+- `event`: Event type (SplitCtxEv)
+- `alphaid`: Trader identifier
+- `time`: Time event index
 - `ticker`: Trading symbol
 - `realtime_pos`: Current position size
+- `realtime_long_pos`: Long position size
+- `realtime_short_pos`: Short position size
+- `realtime_avail_shot_vol`: Available short volume
+
+**Market DataFrame (market_df)** - MarketDataEv.csv [Optional]:
+- `event`: Event type (MarketDataEv)
+- `alphaid`: Market data source identifier
+- `time`: Time event index
+- `ticker`: Trading symbol
+- `last_price`: Latest market price
+- `prev_close_price`: Previous close price
 
 ### 4. Common Validation Patterns
 
-#### Per-Ti Event Validation
+#### Per-Time Event Validation
 ```python
-def check(self, input_df, output_df, realtime_pos_df):
+def check(self, incheck_alpha_df, merged_df, split_alpha_df, realtime_pos_df, market_df=None):
     violations = []
     
-    for ti in input_df['ti'].unique():
-        ti_input = input_df[input_df['ti'] == ti]
-        ti_output = output_df[output_df['ti'] == ti]
-        ti_positions = realtime_pos_df[realtime_pos_df['ti'] == ti]
+    for time in merged_df['time'].unique():
+        time_incheck = incheck_alpha_df[incheck_alpha_df['time'] == time]
+        time_merged = merged_df[merged_df['time'] == time]
+        time_split = split_alpha_df[split_alpha_df['time'] == time]
+        time_positions = realtime_pos_df[realtime_pos_df['time'] == time]
         
         # Your per-event logic here
         if some_condition_fails:
-            violations.append(f"ti={ti}: violation description")
+            violations.append(f"time={time}: violation description")
     
     if violations:
         return CheckResult(
@@ -109,15 +133,15 @@ def check(self, input_df, output_df, realtime_pos_df):
 
 #### Data Merging for Complex Checks
 ```python
-def check(self, input_df, output_df, realtime_pos_df):
-    # Merge output with positions to calculate trade volumes
-    merged = output_df.merge(
+def check(self, incheck_alpha_df, merged_df, split_alpha_df, realtime_pos_df, market_df=None):
+    # Merge split alphas with positions to calculate trade volumes
+    merged = split_alpha_df.merge(
         realtime_pos_df,
-        on=['ti', 'sid', 'ticker'],
+        on=['time', 'alphaid', 'ticker'],
         how='left'
     )
     merged['realtime_pos'] = merged['realtime_pos'].fillna(0.0)
-    merged['trade_volume'] = merged['target'] - merged['realtime_pos']
+    merged['trade_volume'] = merged['volume'] - merged['realtime_pos']
     
     # Now validate the calculated trade_volume
     # ...
@@ -125,17 +149,17 @@ def check(self, input_df, output_df, realtime_pos_df):
 
 #### Statistical Validation
 ```python
-def check(self, input_df, output_df, realtime_pos_df):
-    # Example: Check for outliers in target values
-    for ti in output_df['ti'].unique():
-        ti_data = output_df[output_df['ti'] == ti]
-        targets = ti_data['target'].abs()
+def check(self, incheck_alpha_df, merged_df, split_alpha_df, realtime_pos_df, market_df=None):
+    # Example: Check for outliers in volume values
+    for time in split_alpha_df['time'].unique():
+        time_data = split_alpha_df[split_alpha_df['time'] == time]
+        volumes = time_data['volume'].abs()
         
-        q75, q25 = targets.quantile([0.75, 0.25])
+        q75, q25 = volumes.quantile([0.75, 0.25])
         iqr = q75 - q25
         upper_bound = q75 + 1.5 * iqr
         
-        outliers = ti_data[ti_data['target'].abs() > upper_bound]
+        outliers = time_data[time_data['volume'].abs() > upper_bound]
         if len(outliers) > 0:
             # Report outliers...
 ```

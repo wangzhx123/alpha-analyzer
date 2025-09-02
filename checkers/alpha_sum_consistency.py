@@ -8,43 +8,45 @@ from base_checker import BaseChecker, CheckResult
 
 class AlphaSumConsistencyChecker(BaseChecker):
     """
-    Checks that alphatype_alpha.sum == trader_alpha.sum for each ti event.
-    Assumes input data represents alphatype alphas and output data represents trader alphas.
+    Checks that merged_alpha.sum == split_alpha.sum for each time event.
+    The merged alpha represents the consolidated upstream alpha that should equal
+    the sum of all split alphas distributed to traders.
     """
     
     @property
     def name(self) -> str:
         return "Alpha Sum Consistency"
     
-    def check(self, input_df: pd.DataFrame, output_df: pd.DataFrame, realtime_pos_df: pd.DataFrame) -> CheckResult:
-        """Check that total input alpha equals total output alpha for each ti"""
+    def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
+              realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
+        """Check that total merged alpha equals total split alpha for each time event"""
         
-        # Group by ti and sum targets for input (alphatype) and output (trader)
-        input_sums = input_df.groupby('ti')['target'].sum().round(6)
-        output_sums = output_df.groupby('ti')['target'].sum().round(6)
+        # Group by time and sum volumes for merged and split alphas
+        merged_sums = merged_df.groupby('time')['volume'].sum().round(6)
+        split_sums = split_alpha_df.groupby('time')['volume'].sum().round(6)
         
         mismatches = []
-        all_tis = set(input_sums.index) | set(output_sums.index)
+        all_times = set(merged_sums.index) | set(split_sums.index)
         
-        for ti in sorted(all_tis):
-            input_sum = input_sums.get(ti, 0.0)
-            output_sum = output_sums.get(ti, 0.0)
+        for time in sorted(all_times):
+            merged_sum = merged_sums.get(time, 0.0)
+            split_sum = split_sums.get(time, 0.0)
             
             # Check for mismatch (using small tolerance for floating point)
-            if abs(input_sum - output_sum) > 1e-6:
-                mismatches.append(f"ti={ti}: input_sum={input_sum:.6f}, output_sum={output_sum:.6f}")
+            if abs(merged_sum - split_sum) > 1e-6:
+                mismatches.append(f"time={time}: merged_sum={merged_sum:.6f}, split_sum={split_sum:.6f}")
         
         if mismatches:
             details = "\n".join(mismatches)
             return CheckResult(
                 checker_name=self.name,
                 status="FAIL",
-                message=f"Found {len(mismatches)} ti events with sum mismatches",
+                message=f"Found {len(mismatches)} time events with sum mismatches",
                 details=details
             )
         else:
             return CheckResult(
                 checker_name=self.name,
                 status="PASS", 
-                message=f"All {len(all_tis)} ti events have consistent alpha sums"
+                message=f"All {len(all_times)} time events have consistent alpha sums"
             )

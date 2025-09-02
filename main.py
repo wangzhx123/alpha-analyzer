@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import argparse
 import sys
 from analyzer import AlphaAnalyzer
 from reporter import ConsoleReporter
@@ -9,15 +10,35 @@ from checkers.volume_rounding import VolumeRoundingChecker
 
 
 def main():
-    if len(sys.argv) != 2:
-        print("Usage: python main.py <data_directory>")
-        print("Expected files in data_directory:")
-        print("  - IncheckAlphaEv.csv (columns: ti,sid,ticker,target)")
-        print("  - SplitAlphaEv.csv (columns: ti,sid,ticker,target)")
-        print("  - RealtimePosEv.csv (columns: ti,sid,ticker,realtime_pos)")
-        return 1
+    parser = argparse.ArgumentParser(
+        description="Alpha Analyzer Framework - Validate trading alpha signals with event-based processing",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Expected files in data directory:
+  - InCheckAlphaEv.csv     Input alpha events (event|alphaid|time|ticker|volume)
+  - MergedAlphaEv.csv      Merged upstream alpha (event|alphaid|time|ticker|volume) [optional]
+  - SplitAlphaEv.csv       Split alpha events (event|alphaid|time|ticker|volume)
+  - SplitCtxEv.csv         Position context (event|alphaid|time|ticker|realtime_pos|...)
+  - MarketDataEv.csv       Market data (event|alphaid|time|ticker|last_price|prev_close_price) [optional]
+
+Note: Time field supports 'nil_last_alpha' string which gets converted to -1 (closing positions)
+        """
+    )
     
-    data_dir = sys.argv[1]
+    parser.add_argument(
+        'csv_dir',
+        metavar='CSV_DIRECTORY',
+        help='Directory containing CSV data files'
+    )
+    
+    parser.add_argument(
+        '--version',
+        action='version',
+        version='Alpha Analyzer Framework 1.0'
+    )
+    
+    args = parser.parse_args()
+    csv_dir = args.csv_dir
     
     # Initialize analyzer and reporter
     analyzer = AlphaAnalyzer()
@@ -30,19 +51,23 @@ def main():
     
     try:
         # Load data
-        print(f"Loading data from: {data_dir}")
-        analyzer.load_data(data_dir)
+        print(f"Loading data from: {csv_dir}")
+        analyzer.load_data(csv_dir)
         
         # Print data summary
         summary = analyzer.get_data_summary()
         if summary:
             print(f"Data Summary:")
-            print(f"  Input events (ti): {summary['input_events']}")
-            print(f"  Output events (ti): {summary['output_events']}")
-            print(f"  Realtime events (ti): {summary['realtime_events']}")
-            print(f"  Input tickers: {summary['input_tickers']}")
-            print(f"  Output tickers: {summary['output_tickers']}")
-            print(f"  Realtime tickers: {summary['realtime_tickers']}")
+            print(f"  InCheck events (time): {summary['incheck_events']}")
+            print(f"  Merged events (time): {summary['merged_events']}")
+            print(f"  Split events (time): {summary['split_events']}")
+            print(f"  Position events (time): {summary['position_events']}")
+            print(f"  Market events (time): {summary['market_events']}")
+            print(f"  InCheck tickers: {summary['incheck_tickers']}")
+            print(f"  Merged tickers: {summary['merged_tickers']}")
+            print(f"  Split tickers: {summary['split_tickers']}")
+            print(f"  Position tickers: {summary['position_tickers']}")
+            print(f"  Market tickers: {summary['market_tickers']}")
         
         # Run analysis
         results = analyzer.run_checks()

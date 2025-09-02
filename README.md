@@ -21,16 +21,19 @@ pip install pandas
 python main.py <data_directory>
 ```
 
-### Required CSV Files
-- `IncheckAlphaEv.csv` - Input alpha events (columns: ti,sid,ticker,target)
-- `SplitAlphaEv.csv` - Output split events (columns: ti,sid,ticker,target)
-- `RealtimePosEv.csv` - Realtime positions (columns: ti,sid,ticker,realtime_pos)
+### Required CSV Files (Production Format)
+All files use pipe-delimited format (`|`):
+- `InCheckAlphaEv.csv` - Input alpha events (columns: event|alphaid|time|ticker|volume)
+- `MergedAlphaEv.csv` - Merged upstream alpha (columns: event|alphaid|time|ticker|volume) [optional]
+- `SplitAlphaEv.csv` - Split alpha events (columns: event|alphaid|time|ticker|volume)
+- `SplitCtxEv.csv` - Position context (columns: event|alphaid|time|ticker|realtime_pos|realtime_long_pos|realtime_short_pos|realtime_avail_shot_vol)
+- `MarketDataEv.csv` - Market data (columns: event|alphaid|time|ticker|last_price|prev_close_price) [optional]
 
 ## Built-in Checkers
 
-1. **Alpha Sum Consistency**: Verifies that total input alpha equals total output alpha for each ti event
-2. **Non-Negative Trader Alpha**: Ensures all trader alpha targets are >= 0 for each ti event
-3. **Volume Rounding (100 shares)**: Validates that trade volumes (target - realtime_pos) are rounded to 100 shares
+1. **Alpha Sum Consistency**: Verifies that merged alpha sum equals split alpha sum for each time event
+2. **Non-Negative Split Alpha**: Ensures all split alpha volumes are >= 0 for each time event
+3. **Volume Rounding (100 shares)**: Validates that trade volumes (split_volume - realtime_pos) are rounded to 100 shares
 
 ## Adding New Checkers
 
@@ -45,10 +48,10 @@ class MyCustomChecker(BaseChecker):
     def name(self) -> str:
         return "My Custom Check"
     
-    def check(self, input_df: pd.DataFrame, output_df: pd.DataFrame, 
-              realtime_pos_df: pd.DataFrame) -> CheckResult:
+    def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
+              realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
         # Your validation logic here - full access to raw DataFrames
-        # Group by ti, merge dataframes, use any pandas operations
+        # Group by time, merge dataframes, use any pandas operations
         
         return CheckResult(
             checker_name=self.name,
@@ -77,13 +80,13 @@ Warnings: 0
 Errors: 0
 
 [PASS] Alpha Sum Consistency
-    All 2 ti events have consistent alpha sums
+    All 2 time events have consistent alpha sums
 
-[PASS] Non-Negative Trader Alpha
-    All 9 trader alphas are non-negative across 2 ti events
+[PASS] Non-Negative Split Alpha
+    All 10 split alpha volumes are non-negative across 2 time events
 
 [PASS] Volume Rounding (100 shares)
-    All 9 trade volumes are properly rounded to 100 shares across 2 ti events
+    All 10 trade volumes are properly rounded to 100 shares across 2 time events
 
 ✅ ALL CHECKS PASSED
 ```
@@ -91,12 +94,12 @@ Errors: 0
 ### Failure Case
 ```
 [FAIL] Volume Rounding (100 shares)
-    Found 7 trade volumes not rounded to 100 shares across 2 ti events
+    Found 2 trade volumes not rounded to 100 shares across 2 time events
     Details:
-      ti=1001: 5 unrounded volumes
-          sid=T1, ticker=AAPL: target=900.0, pos=150.0, volume=750.0 (remainder=50.0)
-          sid=T1, ticker=GOOGL: target=250.0, pos=75.0, volume=175.0 (remainder=75.0)
-          ...
+      time=93000000: 1 unrounded volumes
+          alphaid=sSZE114Atem, ticker=000002.SZE: split=-100.0, pos=250.0, trade_vol=-350.0 (remainder=50.0)
+      time=93100000: 1 unrounded volumes
+          alphaid=sSZE113Atem, ticker=000001.SZE: split=9475.0, pos=1350.0, trade_vol=8125.0 (remainder=25.0)
 
 ❌ ANALYSIS FAILED - 1 critical issues
 ```
@@ -112,7 +115,7 @@ alpha_analyzer/
 │   ├── alpha_sum_consistency.py     # Sum consistency checker
 │   ├── non_negative_trader.py       # Non-negative checker
 │   └── volume_rounding.py           # Volume rounding checker
-├── sample_data/                     # Example CSV files
+├── production_data/                 # Example CSV files
 ├── main.py                          # Entry point
 ├── requirements.txt                 # Dependencies
 ├── CHECKER_DEV_GUIDE.md            # Comprehensive development guide

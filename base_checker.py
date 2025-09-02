@@ -20,13 +20,16 @@ class BaseChecker(ABC):
         pass
     
     @abstractmethod
-    def check(self, input_df: pd.DataFrame, output_df: pd.DataFrame, realtime_pos_df: pd.DataFrame) -> CheckResult:
+    def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
+              realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
         """
-        Run the check on input, output and realtime position data
+        Run the check on incheck, merged, split, position and market data
         Args:
-            input_df: DataFrame loaded from IncheckAlphaEv.csv (columns: ti,sid,ticker,target)
-            output_df: DataFrame loaded from SplitAlphaEv.csv (columns: ti,sid,ticker,target)
-            realtime_pos_df: DataFrame loaded from RealtimePosEv.csv (columns: ti,sid,ticker,realtime_pos)
+            incheck_alpha_df: DataFrame from InCheckAlphaEv.csv (columns: event|alphaid|time|ticker|volume)
+            merged_df: DataFrame from MergedAlphaEv.csv (columns: event|alphaid|time|ticker|volume)
+            split_alpha_df: DataFrame from SplitAlphaEv.csv (columns: event|alphaid|time|ticker|volume)
+            realtime_pos_df: DataFrame from SplitCtxEv.csv (columns: event|alphaid|time|ticker|realtime_pos|...)
+            market_df: Optional DataFrame from MarketDataEv.csv (columns: event|alphaid|time|ticker|last_price|prev_close_price)
         Returns:
             CheckResult with status and message
         """
