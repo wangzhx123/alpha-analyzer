@@ -8,9 +8,9 @@ from base_checker import BaseChecker, CheckResult
 
 class VolumeRoundingChecker(BaseChecker):
     """
-    Checks that allocated trade volumes are rounded to 100 shares.
+    Checks that allocated trade volumes are rounded to specified increment.
     Trade volume = split volume - realtime position
-    For each trader (alphaid) and ticker combination, verifies trade volume is divisible by 100.
+    For each trader (alphaid) and ticker combination, verifies trade volume is divisible by increment.
     """
     
     @property

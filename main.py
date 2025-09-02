@@ -2,11 +2,11 @@
 
 import argparse
 import sys
+import yaml
+from pathlib import Path
 from analyzer import AlphaAnalyzer
-from reporter import ConsoleReporter
-from checkers.alpha_sum_consistency import AlphaSumConsistencyChecker
-from checkers.non_negative_trader import NonNegativeTraderChecker
-from checkers.volume_rounding import VolumeRoundingChecker
+from base_checker import CheckResult
+from typing import List
 
 
 def main():
@@ -32,6 +32,13 @@ Note: Time field supports 'nil_last_alpha' string which gets converted to -1 (cl
     )
     
     parser.add_argument(
+        '--config',
+        '-c',
+        default='config.yaml',
+        help='Configuration file path (default: config.yaml)'
+    )
+    
+    parser.add_argument(
         '--version',
         action='version',
         version='Alpha Analyzer Framework 1.0'
@@ -40,40 +47,37 @@ Note: Time field supports 'nil_last_alpha' string which gets converted to -1 (cl
     args = parser.parse_args()
     csv_dir = args.csv_dir
     
-    # Initialize analyzer and reporter
-    analyzer = AlphaAnalyzer()
-    reporter = ConsoleReporter()
-    
-    # Register checkers
-    analyzer.add_checker(AlphaSumConsistencyChecker())
-    analyzer.add_checker(NonNegativeTraderChecker())
-    analyzer.add_checker(VolumeRoundingChecker())
-    
     try:
+        # Load configuration
+        config_path = Path(args.config)
+        config = {}
+        if config_path.exists():
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f) or {}
+        else:
+            print(f"Warning: Configuration file {config_path} not found, using defaults")
+        
+        # Initialize analyzer
+        analyzer = AlphaAnalyzer()
+        
+        # Load default checkers with config access
+        from checkers.alpha_sum_consistency import AlphaSumConsistencyChecker
+        from checkers.non_negative_trader import NonNegativeTraderChecker
+        from checkers.volume_rounding import VolumeRoundingChecker
+        
+        analyzer.add_checker(AlphaSumConsistencyChecker(config))
+        analyzer.add_checker(NonNegativeTraderChecker())
+        analyzer.add_checker(VolumeRoundingChecker())
+        
         # Load data
         print(f"Loading data from: {csv_dir}")
         analyzer.load_data(csv_dir)
         
-        # Print data summary
-        summary = analyzer.get_data_summary()
-        if summary:
-            print(f"Data Summary:")
-            print(f"  InCheck events (time): {summary['incheck_events']}")
-            print(f"  Merged events (time): {summary['merged_events']}")
-            print(f"  Split events (time): {summary['split_events']}")
-            print(f"  Position events (time): {summary['position_events']}")
-            print(f"  Market events (time): {summary['market_events']}")
-            print(f"  InCheck tickers: {summary['incheck_tickers']}")
-            print(f"  Merged tickers: {summary['merged_tickers']}")
-            print(f"  Split tickers: {summary['split_tickers']}")
-            print(f"  Position tickers: {summary['position_tickers']}")
-            print(f"  Market tickers: {summary['market_tickers']}")
-        
         # Run analysis
         results = analyzer.run_checks()
         
-        # Print results
-        reporter.print_results(results)
+        # Display results
+        print_results(results)
         
         # Exit with appropriate code
         failed_count = sum(1 for r in results if r.status in ['FAIL', 'ERROR'])
@@ -82,6 +86,53 @@ Note: Time field supports 'nil_last_alpha' string which gets converted to -1 (cl
     except Exception as e:
         print(f"Error: {str(e)}")
         return 1
+
+
+def print_results(results: List[CheckResult]):
+    """Simple results printing"""
+    colors = {
+        'PASS': '\033[92m',    # Green
+        'FAIL': '\033[91m',    # Red  
+        'WARN': '\033[93m',    # Yellow
+        'ERROR': '\033[91m',   # Red
+        'RESET': '\033[0m'     # Reset
+    }
+    
+    print("\n" + "="*60)
+    print("ALPHA ANALYZER RESULTS")
+    print("="*60)
+    
+    # Count results by status
+    passed = sum(1 for r in results if r.status == "PASS")
+    failed = sum(1 for r in results if r.status == "FAIL")
+    warnings = sum(1 for r in results if r.status == "WARNING")
+    errors = sum(1 for r in results if r.status == "ERROR")
+    
+    print(f"Total Checks: {len(results)}")
+    print(f"Passed: {colors['PASS']}{passed}{colors['RESET']}")
+    print(f"Failed: {colors['FAIL']}{failed}{colors['RESET']}")
+    print(f"Warnings: {colors['WARN']}{warnings}{colors['RESET']}")
+    print(f"Errors: {colors['ERROR']}{errors}{colors['RESET']}")
+    print()
+    
+    # Print individual results
+    for result in results:
+        color = colors.get(result.status, colors['RESET'])
+        print(f"[{color}{result.status}{colors['RESET']}] {result.checker_name}")
+        print(f"    {result.message}")
+        
+        if result.details:
+            for line in result.details.split('\n'):
+                if line.strip():
+                    print(f"      {line}")
+        print()
+    
+    # Final status
+    if failed == 0 and errors == 0:
+        print(f"{colors['PASS']}✅ ALL CHECKS PASSED{colors['RESET']}")
+    else:
+        failure_count = failed + errors
+        print(f"{colors['FAIL']}❌ ANALYSIS FAILED - {failure_count} critical issues{colors['RESET']}")
 
 
 if __name__ == "__main__":

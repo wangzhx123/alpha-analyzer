@@ -1,0 +1,5 @@
+# Alpha Analyzer Configuration
+# Simple flat configuration - reference these keys directly in checkers
+
+# Checker settings
+alpha_sum_tolerance: 0.000001  # Floating point comparison tolerance for sum consistency

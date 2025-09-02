@@ -10,10 +10,10 @@ This framework validates input alpha signals from PMs against output split alpha
 
 ### Installation
 ```bash
-# Create virtual environment
-python3 -m venv venv
-source venv/bin/activate
-pip install pandas
+# Create virtual environment with uv
+uv venv
+source .venv/bin/activate
+uv pip install pandas pyyaml
 ```
 
 ### Usage

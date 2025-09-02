@@ -110,10 +110,11 @@ class AlphaAnalyzer:
                                      self.realtime_pos_df, self.market_df)
                 results.append(result)
             except Exception as e:
+                error_msg = f"Checker failed: {str(e)}"
                 results.append(CheckResult(
                     checker_name=checker.name,
                     status="ERROR",
-                    message=f"Checker failed: {str(e)}"
+                    message=error_msg
                 ))
         return results
     
