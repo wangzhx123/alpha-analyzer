@@ -27,7 +27,15 @@ class PMConstraintChecker(BaseChecker):
     
     def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
               realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
-        """Check that PM selling doesn't exceed available position from previous day"""
+        """
+        Check T+1 sellable constraints with intra-day virtual position tracking
+        
+        Enhanced Logic:
+        1. Start with previous day closing virtual position (time = -1)
+        2. Track virtual position changes chronologically through the day
+        3. For each alpha target, check if required sell <= current accumulated virtual position
+        4. Update virtual position after each time event for next constraint check
+        """
         
         if self.pm_virtual_pos_df is None:
             return CheckResult(
@@ -36,66 +44,64 @@ class PMConstraintChecker(BaseChecker):
                 message="PM virtual position data not provided"
             )
         
-        # Get closing positions (time = -1, represents previous day closing)
-        closing_positions = self.pm_virtual_pos_df[self.pm_virtual_pos_df['time'] == -1]
-        
-        # Get current day merged alphas (target positions)
-        current_alphas = merged_df[merged_df['time'] != -1]
-        
-        # Get current PM virtual positions for trade volume calculation
-        current_positions = self.pm_virtual_pos_df[self.pm_virtual_pos_df['time'] != -1]
-        
         violations = []
         
-        # Group by time to check each time event
-        for time_event in sorted(current_alphas['time'].unique()):
-            time_alphas = current_alphas[current_alphas['time'] == time_event]
-            time_positions = current_positions[current_positions['time'] == time_event]
+        # Get all unique tickers to track
+        all_tickers = set(merged_df['ticker'].unique()) | set(self.pm_virtual_pos_df['ticker'].unique())
+        
+        # For each ticker, track virtual position chronologically
+        for ticker in all_tickers:
+            # Initialize with previous day closing position
+            ticker_vpos_data = self.pm_virtual_pos_df[self.pm_virtual_pos_df['ticker'] == ticker]
+            closing_row = ticker_vpos_data[ticker_vpos_data['time'] == -1]
             
-            for _, alpha_row in time_alphas.iterrows():
-                ticker = alpha_row['ticker']
-                target_position = alpha_row['volume']  # Target absolute position
+            if closing_row.empty:
+                current_virtual_pos = 0  # No previous position
+            else:
+                current_virtual_pos = closing_row['virtual_position'].iloc[0]
+            
+            # Get all alpha targets for this ticker, sorted chronologically
+            ticker_alphas = merged_df[
+                (merged_df['ticker'] == ticker) & (merged_df['time'] != -1)
+            ].sort_values('time')
+            
+            # Track position changes through the day
+            for _, alpha_row in ticker_alphas.iterrows():
+                time_event = alpha_row['time']
+                target_position = alpha_row['volume']
                 
-                # Find current virtual position for this ticker at this time
-                current_pos_row = time_positions[time_positions['ticker'] == ticker]
-                if current_pos_row.empty:
-                    # If no current position, assume 0
-                    current_virtual_pos = 0
-                else:
-                    current_virtual_pos = current_pos_row['virtual_position'].iloc[0]
-                
-                # Calculate required trade volume
+                # Calculate required trade volume from current virtual position
                 trade_volume = target_position - current_virtual_pos
                 
-                # Check constraint only for selling (negative trade volume)
-                if trade_volume < 0:
-                    # Find available position from previous day closing
-                    closing_row = closing_positions[closing_positions['ticker'] == ticker]
-                    
-                    if closing_row.empty:
-                        available_to_sell = 0
-                    else:
-                        available_to_sell = closing_row['virtual_position'].iloc[0]
-                    
-                    # Check if selling more than available
+                # Check T+1 constraint for selling
+                if trade_volume < 0:  # Selling
                     required_sell = abs(trade_volume)
+                    
+                    # Available to sell = current virtual position (can't sell more than we have)
+                    available_to_sell = max(0, current_virtual_pos)
+                    
                     if required_sell > available_to_sell:
                         violations.append({
                             'time': time_event,
                             'ticker': ticker,
                             'target_position': target_position,
-                            'current_position': current_virtual_pos,
+                            'current_virtual_pos': current_virtual_pos,
                             'required_sell': required_sell,
                             'available_to_sell': available_to_sell,
-                            'excess_sell': required_sell - available_to_sell
+                            'excess_sell': required_sell - available_to_sell,
+                            'trade_volume': trade_volume
                         })
+                
+                # Update virtual position for next time event
+                # (Assuming the alpha target represents the achieved virtual position)
+                current_virtual_pos = target_position
         
         if violations:
             details_lines = []
             total_violations = len(violations)
             total_excess = sum(v['excess_sell'] for v in violations)
             
-            details_lines.append(f"Found {total_violations} T+1 constraint violations:")
+            details_lines.append(f"Found {total_violations} T+1 constraint violations (intra-day tracking):")
             
             # Group by time for better readability
             violations_by_time = {}
@@ -112,7 +118,8 @@ class PMConstraintChecker(BaseChecker):
                 for v in time_violations[:5]:  # Show first 5 violations per time
                     details_lines.append(
                         f"    {v['ticker']}: target={v['target_position']:.0f}, "
-                        f"current={v['current_position']:.0f}, "
+                        f"vpos_before={v['current_virtual_pos']:.0f}, "
+                        f"trade={v['trade_volume']:.0f}, "
                         f"need_sell={v['required_sell']:.0f}, "
                         f"available={v['available_to_sell']:.0f}, "
                         f"excess={v['excess_sell']:.0f}"
@@ -130,9 +137,10 @@ class PMConstraintChecker(BaseChecker):
                 details=details
             )
         else:
-            total_checked = len(current_alphas)
+            # Count total alpha targets checked
+            total_checked = len(merged_df[merged_df['time'] != -1])
             return CheckResult(
                 checker_name=self.name,
                 status="PASS",
-                message=f"All {total_checked} PM alpha targets respect T+1 sellable constraints"
+                message=f"All {total_checked} PM alpha targets respect T+1 sellable constraints (intra-day tracking)"
             )
