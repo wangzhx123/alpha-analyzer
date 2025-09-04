@@ -1,132 +1,143 @@
 # Alpha Analyzer Framework
 
-A simple, extensible framework for analyzing trading alpha signals with event-based (ti) processing.
+A clean, multi-interface framework for validating and analyzing trading alpha signals with event-based processing.
 
-## Overview
+## Design Philosophy
 
-This framework validates input alpha signals from PMs against output split alphas assigned to traders, ensuring data consistency and business rule compliance across time-indexed events. It supports realtime position tracking and complex validation rules.
+**Two Primary Use Cases:**
+1. **Post-Check (Validation)**: Automated validation in production pipelines  
+2. **Post-Analyze (Diagnostic)**: Deep investigation of production issues
+
+**Four Analysis Interfaces:**
+- **Overview**: All tickers, all times (high-level insights)
+- **Time Event**: All tickers at specific time (allocation analysis)  
+- **Ticker Timeline**: Specific ticker across all times (performance trends)
+- **Deep Analysis**: Specific time + ticker (detailed diagnostics)
 
 ## Quick Start
 
 ### Installation
 ```bash
-# Create virtual environment with uv
-uv venv
-source .venv/bin/activate
-uv pip install pandas pyyaml
+uv venv && source .venv/bin/activate
+uv pip install pandas matplotlib
 ```
 
-### Usage
+### Usage Patterns
 ```bash
-python main.py <data_directory>
+# 1. Validation + Overview Analysis
+python main.py --csv-dir production_data
+
+# 2. Time Event Analysis (all tickers at ti=93000000)
+python main.py --csv-dir production_data --ti 93000000
+
+# 3. Ticker Timeline Analysis (000001.SZE across all times)  
+python main.py --csv-dir production_data --ticker "000001.SZE"
+
+# 4. Deep Analysis (specific ti+ticker combination)
+python main.py --csv-dir production_data --ti 93000000 --ticker "000001.SZE"
 ```
 
-### Required CSV Files (Production Format)
-All files use pipe-delimited format (`|`):
-- `InCheckAlphaEv.csv` - Input alpha events (columns: event|alphaid|time|ticker|volume)
-- `MergedAlphaEv.csv` - Merged upstream alpha (columns: event|alphaid|time|ticker|volume) [optional]
-- `SplitAlphaEv.csv` - Split alpha events (columns: event|alphaid|time|ticker|volume)
-- `SplitCtxEv.csv` - Position context (columns: event|alphaid|time|ticker|realtime_pos|realtime_long_pos|realtime_short_pos|realtime_avail_shot_vol)
-- `MarketDataEv.csv` - Market data (columns: event|alphaid|time|ticker|last_price|prev_close_price) [optional]
+### Required CSV Files (Pipe-Delimited)
+- `InCheckAlphaEv.csv` - Input alpha events
+- `SplitAlphaEv.csv` - Split alpha events  
+- `SplitCtxEv.csv` - Position context
+- `MergedAlphaEv.csv` - Merged upstream alpha [optional]
+- `MarketDataEv.csv` - Market data [optional]
+- `PMVirtualPosEv.csv` - PM virtual positions [optional, enables T+1 constraint checking]
 
-## Built-in Checkers
+## Auto-Loaded Checkers
 
-1. **Alpha Sum Consistency**: Verifies that merged alpha sum equals split alpha sum for each time event
-2. **Non-Negative Split Alpha**: Ensures all split alpha volumes are >= 0 for each time event
-3. **Volume Rounding (100 shares)**: Validates that trade volumes (split_volume - realtime_pos) are rounded to 100 shares
+**All checkers in `checkers/` directory are automatically loaded:**
 
-## Adding New Checkers
+1. **Alpha Sum Consistency**: Merged alpha sum = split alpha sum per time event
+2. **Non-Negative Split Alpha**: All split volumes ≥ 0  
+3. **Volume Rounding**: Trade volumes rounded to 100 shares
+4. **PM T+1 Sellable Constraint**: PM can't sell more than previous day position
 
-See **[CHECKER_DEV_GUIDE.md](CHECKER_DEV_GUIDE.md)** for comprehensive development guide.
+## Analysis Interfaces
 
-Quick example:
-```python
-from base_checker import BaseChecker, CheckResult
-
-class MyCustomChecker(BaseChecker):
-    @property
-    def name(self) -> str:
-        return "My Custom Check"
-    
-    def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
-              realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
-        # Your validation logic here - full access to raw DataFrames
-        # Group by time, merge dataframes, use any pandas operations
-        
-        return CheckResult(
-            checker_name=self.name,
-            status="PASS",  # or "FAIL", "WARN", "ERROR"
-            message="Check completed successfully",
-            details=None  # Optional detailed breakdown
-        )
+### Interface 1: Overview Analysis
+**Scope**: All tickers across all time periods  
+**Usage**: `--csv-dir production_data`
+```
+📊 Fill Rate Overview (All Tickers & Times):
+   Total trades: 6 | Analyzable: 6
+   Mean fill rate: 0.007
+   Best performer: 000002.SZE (0.012)
+   Worst performer: 000001.SZE (0.000)
+   📈 Plot saved: fill_rate_overview.png
 ```
 
-Then register in `main.py`:
-```python
-analyzer.add_checker(MyCustomChecker())
+### Interface 2: Time Event Analysis  
+**Scope**: All tickers at specific time event  
+**Usage**: `--csv-dir production_data --ti 93000000`
+```
+📊 Fill Rate Analysis (ti=93000000, All Tickers):
+   Tickers analyzed: 3
+   Overall mean fill rate: 0.008
+   Per-ticker performance:
+     000001.SZE: 0.000 (2 trades)
+     000002.SZE: 0.012 (2 trades)
+     000003.SZE: 0.011 (1 trades)
+   📈 Plot saved: fill_rate_ti_93000000.png
 ```
 
-## Sample Output
-
-### Success Case
+### Interface 3: Ticker Timeline Analysis
+**Scope**: Specific ticker across all time periods  
+**Usage**: `--csv-dir production_data --ticker "000001.SZE"`
 ```
-============================================================
-ALPHA ANALYZER RESULTS
-============================================================
-Total Checks: 3
-Passed: 3
-Failed: 0
-Warnings: 0
-Errors: 0
-
-[PASS] Alpha Sum Consistency
-    All 2 time events have consistent alpha sums
-
-[PASS] Non-Negative Split Alpha
-    All 10 split alpha volumes are non-negative across 2 time events
-
-[PASS] Volume Rounding (100 shares)
-    All 10 trade volumes are properly rounded to 100 shares across 2 time events
-
-✅ ALL CHECKS PASSED
+📊 Fill Rate Timeline (000001.SZE, All Times):
+   Time periods: 2
+   Overall mean fill rate: 0.005
+   Timeline performance:
+     ti=93000000: 0.000 (2 trades)
+     ti=93100000: 0.011 (2 trades)
+   📈 Plot saved: fill_rate_000001.SZE.png
 ```
 
-### Failure Case
+### Interface 4: Deep Analysis
+**Scope**: Specific time + ticker combination  
+**Usage**: `--csv-dir production_data --ti 93000000 --ticker "000001.SZE"`
 ```
-[FAIL] Volume Rounding (100 shares)
-    Found 2 trade volumes not rounded to 100 shares across 2 time events
-    Details:
-      time=93000000: 1 unrounded volumes
-          alphaid=sSZE114Atem, ticker=000002.SZE: split=-100.0, pos=250.0, trade_vol=-350.0 (remainder=50.0)
-      time=93100000: 1 unrounded volumes
-          alphaid=sSZE113Atem, ticker=000001.SZE: split=9475.0, pos=1350.0, trade_vol=8125.0 (remainder=25.0)
-
-❌ ANALYSIS FAILED - 1 critical issues
+📊 Detailed Fill Analysis (ti=93000000, ticker=000001.SZE):
+   Trade-by-trade breakdown:
+     sSZE113Atem: target=14000, actual=0, fill_rate=0.000
+     sSZE114Atem: target=14000, actual=0, fill_rate=0.000
+   📈 Detailed plot saved: fill_rate_detailed_93000000_000001.SZE.png
 ```
 
-## Project Structure
+## Architecture
 
 ```
 alpha_analyzer/
-├── analyzer.py                      # Main AlphaAnalyzer class
-├── base_checker.py                  # BaseChecker interface + CheckResult
-├── reporter.py                      # ConsoleReporter for formatted output
-├── checkers/
-│   ├── alpha_sum_consistency.py     # Sum consistency checker
-│   ├── non_negative_trader.py       # Non-negative checker
-│   └── volume_rounding.py           # Volume rounding checker
-├── production_data/                 # Example CSV files
-├── main.py                          # Entry point
-├── requirements.txt                 # Dependencies
-├── CHECKER_DEV_GUIDE.md            # Comprehensive development guide
-└── README.md                       # This file
+├── main.py                    # Entry point with auto-loading
+├── analyzer.py               # Multi-interface analyzer
+├── base_checker.py          # Checker interface
+├── checkers/                # Auto-loaded validation plugins
+│   ├── alpha_sum_consistency.py
+│   ├── non_negative_trader.py  
+│   ├── volume_rounding.py
+│   └── pm_constraint_checker.py
+└── production_data/         # Sample CSV files
 ```
+
+## Fill Rate Analysis Logic
+
+**Core Concept**: Compare alpha targets at time T with actual position changes at time T+1
+- **Target Alpha**: Absolute position target (from `SplitAlphaEv.csv`)
+- **Position Change**: `realtime_pos[T+1] - realtime_pos[T]` (from `SplitCtxEv.csv`)
+- **Fill Rate**: `position_change / target_alpha`
+
+**Interface-Specific Analysis**:
+- **Overview**: Distribution histogram, best/worst performers
+- **Time Event**: Bar chart comparing tickers at specific time
+- **Ticker Timeline**: Line chart showing performance over time  
+- **Deep Analysis**: 2x2 dashboard with detailed breakdown
 
 ## Key Features
 
-- **Simple Interface**: Just implement one `check()` method
-- **Full Data Access**: Raw pandas DataFrames for maximum flexibility  
-- **Event-based Processing**: Built-in support for time-indexed (ti) validation
-- **Extensible**: Drop in new checkers with zero framework changes
-- **Clear Reporting**: Color-coded console output with detailed failure information
-- **Production Ready**: Error handling, data validation, and robust CSV loading
+✅ **Auto-Loading**: Drop checkers in `checkers/` directory - no registration needed  
+✅ **Multi-Interface**: Different detail levels based on parameters  
+✅ **Clean Design**: Single analyzer with intelligent behavior  
+✅ **Production Ready**: Robust error handling and data validation  
+✅ **Extensible**: Easy to add new checkers and analyzers

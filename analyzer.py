@@ -2,11 +2,13 @@ from typing import List
 import pandas as pd
 from pathlib import Path
 from base_checker import BaseChecker, CheckResult
+from base_analyzer import BaseAnalyzer, AnalysisResult
 
 
 class AlphaAnalyzer:
     def __init__(self):
         self.checkers: List[BaseChecker] = []
+        self.analyzers: List[BaseAnalyzer] = []
         self.incheck_alpha_df = None
         self.merged_df = None
         self.split_alpha_df = None
@@ -16,6 +18,10 @@ class AlphaAnalyzer:
     def add_checker(self, checker: BaseChecker):
         """Register a new checker"""
         self.checkers.append(checker)
+    
+    def add_analyzer(self, analyzer: BaseAnalyzer):
+        """Register a new analyzer"""
+        self.analyzers.append(analyzer)
     
     def load_data(self, data_dir: str):
         """
@@ -116,6 +122,47 @@ class AlphaAnalyzer:
                     status="ERROR",
                     message=error_msg
                 ))
+        return results
+    
+    def run_analysis(self, ti=None, ticker=None) -> List[AnalysisResult]:
+        """Execute analyzers based on interface"""
+        if (self.incheck_alpha_df is None or self.merged_df is None or 
+            self.split_alpha_df is None or self.realtime_pos_df is None):
+            raise RuntimeError("Data not loaded. Call load_data() first.")
+        
+        results = []
+        
+        for analyzer in self.analyzers:
+            try:
+                result = None
+                
+                if ti is not None and ticker is not None:
+                    # Interface 4: Deep analysis
+                    result = analyzer.analyze_deep(ti, ticker, self.incheck_alpha_df, self.merged_df,
+                                                  self.split_alpha_df, self.realtime_pos_df, self.market_df)
+                elif ti is not None:
+                    # Interface 2: Time event analysis
+                    result = analyzer.analyze_time_event(ti, self.incheck_alpha_df, self.merged_df,
+                                                        self.split_alpha_df, self.realtime_pos_df, self.market_df)
+                elif ticker is not None:
+                    # Interface 3: Ticker timeline analysis
+                    result = analyzer.analyze_ticker_timeline(ticker, self.incheck_alpha_df, self.merged_df,
+                                                             self.split_alpha_df, self.realtime_pos_df, self.market_df)
+                else:
+                    # Interface 1: Overview analysis
+                    result = analyzer.analyze_overview(self.incheck_alpha_df, self.merged_df,
+                                                      self.split_alpha_df, self.realtime_pos_df, self.market_df)
+                
+                if result is not None:
+                    results.append(result)
+                    
+            except Exception as e:
+                error_result = AnalysisResult(
+                    analyzer_name=analyzer.name,
+                    summary=f"Analysis failed: {str(e)}"
+                )
+                results.append(error_result)
+        
         return results
     
     def get_data_summary(self):
