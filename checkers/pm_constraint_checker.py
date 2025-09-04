@@ -8,13 +8,21 @@ from base_checker import BaseChecker, CheckResult
 
 class PMConstraintChecker(BaseChecker):
     """
-    Checks T+1 rule: PM cannot sell more than available from previous day position.
+    Checks T+1 settlement rule: PM cannot sell shares bought on the same day.
+    
+    T+1 Rule: You must hold positions for at least 1 day before selling.
     
     Logic:
-    1. Get PM virtual position at closing (time = -1, nil_last_alpha)
-    2. For each current alpha target, calculate required trade volume:
-       trade_volume = target_alpha - current_virtual_position
-    3. If trade_volume < 0 (selling), check if abs(trade_volume) <= available_position
+    1. Start with previous day closing position (settled shares that can be sold)
+    2. Track intra-day net buys/sells to maintain available sellable quantity
+    3. Available to sell = previous_day_position + min(0, net_intraday_trade)
+    4. For each sell trade, check if sell_volume <= available_sellable_shares
+    
+    Example:
+    - Previous day: 8000 shares
+    - Today 9:30: Sell 2000 → Available: 8000 - 2000 = 6000 
+    - Today 9:31: Buy 2000 → Available: still 6000 (can't sell same-day buys)
+    - Today 9:32: Try sell 7000 → VIOLATION (only 6000 available)
     """
     
     def __init__(self, pm_virtual_pos_df=None):
@@ -28,13 +36,14 @@ class PMConstraintChecker(BaseChecker):
     def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
               realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
         """
-        Check T+1 sellable constraints with intra-day virtual position tracking
+        Check T+1 settlement rule: Cannot sell shares bought on same day
         
-        Enhanced Logic:
-        1. Start with previous day closing virtual position (time = -1)
-        2. Track virtual position changes chronologically through the day
-        3. For each alpha target, check if required sell <= current accumulated virtual position
-        4. Update virtual position after each time event for next constraint check
+        T+1 Logic:
+        1. Start with previous day closing position (fully settled, sellable)
+        2. For each trade chronologically:
+           - If selling: reduce available sellable shares
+           - If buying: do NOT increase available sellable shares (T+1 rule)
+        3. Available_to_sell = previous_day_position + min(0, cumulative_net_trades)
         """
         
         if self.pm_virtual_pos_df is None:
@@ -49,51 +58,60 @@ class PMConstraintChecker(BaseChecker):
         # Get all unique tickers to track
         all_tickers = set(merged_df['ticker'].unique()) | set(self.pm_virtual_pos_df['ticker'].unique())
         
-        # For each ticker, track virtual position chronologically
+        # For each ticker, track T+1 constraint
         for ticker in all_tickers:
-            # Initialize with previous day closing position
+            # Initialize with previous day closing position (settled shares)
             ticker_vpos_data = self.pm_virtual_pos_df[self.pm_virtual_pos_df['ticker'] == ticker]
             closing_row = ticker_vpos_data[ticker_vpos_data['time'] == -1]
             
             if closing_row.empty:
-                current_virtual_pos = 0  # No previous position
+                previous_day_position = 0  # No previous settled position
             else:
-                current_virtual_pos = closing_row['virtual_position'].iloc[0]
+                previous_day_position = closing_row['virtual_position'].iloc[0]
+            
+            # Available to sell starts with previous day position
+            available_to_sell = previous_day_position
+            current_virtual_pos = previous_day_position
             
             # Get all alpha targets for this ticker, sorted chronologically
             ticker_alphas = merged_df[
                 (merged_df['ticker'] == ticker) & (merged_df['time'] != -1)
             ].sort_values('time')
             
-            # Track position changes through the day
+            # Track T+1 constraint through the day
             for _, alpha_row in ticker_alphas.iterrows():
                 time_event = alpha_row['time']
                 target_position = alpha_row['volume']
                 
-                # Calculate required trade volume from current virtual position
+                # Calculate required trade volume
                 trade_volume = target_position - current_virtual_pos
                 
                 # Check T+1 constraint for selling
                 if trade_volume < 0:  # Selling
                     required_sell = abs(trade_volume)
                     
-                    # Available to sell = current virtual position (can't sell more than we have)
-                    available_to_sell = max(0, current_virtual_pos)
-                    
                     if required_sell > available_to_sell:
                         violations.append({
                             'time': time_event,
                             'ticker': ticker,
                             'target_position': target_position,
+                            'previous_day_position': previous_day_position,
                             'current_virtual_pos': current_virtual_pos,
                             'required_sell': required_sell,
                             'available_to_sell': available_to_sell,
                             'excess_sell': required_sell - available_to_sell,
                             'trade_volume': trade_volume
                         })
+                    else:
+                        # Update available after successful sell (reduces sellable shares)
+                        available_to_sell -= required_sell
                 
-                # Update virtual position for next time event
-                # (Assuming the alpha target represents the achieved virtual position)
+                elif trade_volume > 0:  # Buying
+                    # Buying does NOT increase available_to_sell due to T+1 rule
+                    # New shares cannot be sold until next day
+                    pass
+                
+                # Update current virtual position for next iteration
                 current_virtual_pos = target_position
         
         if violations:
@@ -101,7 +119,8 @@ class PMConstraintChecker(BaseChecker):
             total_violations = len(violations)
             total_excess = sum(v['excess_sell'] for v in violations)
             
-            details_lines.append(f"Found {total_violations} T+1 constraint violations (intra-day tracking):")
+            details_lines.append(f"Found {total_violations} T+1 settlement rule violations:")
+            details_lines.append("(Cannot sell shares bought on same day)")
             
             # Group by time for better readability
             violations_by_time = {}
@@ -117,11 +136,10 @@ class PMConstraintChecker(BaseChecker):
                 
                 for v in time_violations[:5]:  # Show first 5 violations per time
                     details_lines.append(
-                        f"    {v['ticker']}: target={v['target_position']:.0f}, "
-                        f"vpos_before={v['current_virtual_pos']:.0f}, "
-                        f"trade={v['trade_volume']:.0f}, "
+                        f"    {v['ticker']}: prev_day={v['previous_day_position']:.0f}, "
+                        f"current_pos={v['current_virtual_pos']:.0f}, "
                         f"need_sell={v['required_sell']:.0f}, "
-                        f"available={v['available_to_sell']:.0f}, "
+                        f"sellable={v['available_to_sell']:.0f}, "
                         f"excess={v['excess_sell']:.0f}"
                     )
                 
@@ -133,7 +151,7 @@ class PMConstraintChecker(BaseChecker):
             return CheckResult(
                 checker_name=self.name,
                 status="FAIL",
-                message=f"Found {total_violations} T+1 constraint violations (total excess: {total_excess:.0f})",
+                message=f"Found {total_violations} T+1 settlement violations (total excess: {total_excess:.0f})",
                 details=details
             )
         else:
@@ -142,5 +160,5 @@ class PMConstraintChecker(BaseChecker):
             return CheckResult(
                 checker_name=self.name,
                 status="PASS",
-                message=f"All {total_checked} PM alpha targets respect T+1 sellable constraints (intra-day tracking)"
+                message=f"All {total_checked} PM alpha targets respect T+1 settlement rule"
             )
