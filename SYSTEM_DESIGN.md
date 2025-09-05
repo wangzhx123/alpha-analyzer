@@ -58,9 +58,10 @@ Portfolio Manager (PM) → Alpha Signal Generation → Signal Distribution → T
 │ time|ticker              │
 │ |vpos                    │
 │                          │
-│ Special: time = -1       │
-│ represents previous      │
-│ day closing positions    │
+│ Previous day positions:  │
+│ - time = -1 (traditional)│ 
+│ - time < 93000000        │
+│ (before market open)     │
 └──────────────────────────┘
 ```
 

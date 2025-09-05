@@ -4,6 +4,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from base_checker import BaseChecker, CheckResult
+from analyzer import AlphaAnalyzer
 
 
 class PMConstraintChecker(BaseChecker):
@@ -44,8 +45,8 @@ class PMConstraintChecker(BaseChecker):
         
         violations = []
         
-        # Get all time events to check (exclude closing positions)
-        time_events = sorted([t for t in split_alpha_df['time'].unique() if t != -1])
+        # Get all time events to check (exclude previous day positions)
+        time_events = sorted([t for t in split_alpha_df['time'].unique() if not AlphaAnalyzer.is_previous_day_position(t)])
         
         for time_event in time_events:
             # Get alpha targets for this time
@@ -133,7 +134,7 @@ class PMConstraintChecker(BaseChecker):
             )
         else:
             # Count total alpha targets checked
-            total_checked = len(merged_df[merged_df['time'] != -1])
+            total_checked = len(merged_df[~merged_df['time'].apply(AlphaAnalyzer.is_previous_day_position)])
             return CheckResult(
                 checker_name=self.name,
                 status="PASS",

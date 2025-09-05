@@ -15,6 +15,10 @@ Business Logic:
 from base_checker import BaseChecker, CheckResult
 import pandas as pd
 from collections import defaultdict
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from analyzer import AlphaAnalyzer
 
 
 class MergeEngineChecker(BaseChecker):
@@ -106,7 +110,7 @@ class MergeEngineChecker(BaseChecker):
                 (in_check_df['ticker'] == ticker)
             ]
             
-            if time_val == -1:  # Closing positions (nil_last_alpha)
+            if AlphaAnalyzer.is_previous_day_position(time_val):  # Previous day positions
                 # For closing positions, missing PM data means 0
                 # Sum all PM entries that exist, others default to 0
                 pm_total = pm_entries['volume'].sum()
@@ -125,7 +129,7 @@ class MergeEngineChecker(BaseChecker):
             
             # Validate conservation
             if abs(pm_total - merged_total) > 1e-6:
-                if time_val == -1:
+                if AlphaAnalyzer.is_previous_day_position(time_val):
                     issues.append(
                         f"PM→Group violation at ti={time_val}, ticker={ticker}: "
                         f"PM total={pm_total} (from: {pm_details}), "

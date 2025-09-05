@@ -103,6 +103,23 @@ class AlphaAnalyzer:
             # Convert non-numeric time values to -1
             df['time'] = pd.to_numeric(df['time'], errors='coerce').fillna(-1).astype(int)
     
+    @staticmethod
+    def is_previous_day_position(time_value: int) -> bool:
+        """
+        Check if a time value represents a previous day position.
+        
+        Previous day positions are identified by:
+        - time == -1 (traditional closing position marker)  
+        - time < 93000000 (before 9:30:00 AM market open)
+        
+        Args:
+            time_value: Integer time value
+            
+        Returns:
+            True if this represents a previous day position
+        """
+        return time_value == -1 or time_value < 93000000
+    
     def run_checks(self) -> List[CheckResult]:
         """Execute all registered checkers"""
         if (self.incheck_alpha_df is None or self.merged_df is None or 
