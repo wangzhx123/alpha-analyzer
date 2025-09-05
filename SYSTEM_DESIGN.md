@@ -52,11 +52,11 @@ Portfolio Manager (PM) → Alpha Signal Generation → Signal Distribution → T
 ### Optional Constraint Data
 ```
 ┌──────────────────────────┐
-│   PMVirtualPosEv         │
+│   VposResEv              │
 │ (PM Virtual Positions)   │
 │                          │
 │ time|ticker              │
-│ |virtual_position        │
+│ |vpos                    │
 │                          │
 │ Special: time = -1       │
 │ represents previous      │
@@ -102,7 +102,7 @@ Where:
 ```
 Constraint Logic:
 1. Get closing position from previous day (time = -1)
-2. Calculate required trade: trade_volume = target_alpha - current_virtual_position  
+2. Calculate required trade: trade_volume = target_alpha - current_vpos  
 3. If trade_volume < 0 (selling):
    └── Assert: |trade_volume| ≤ previous_day_position
 

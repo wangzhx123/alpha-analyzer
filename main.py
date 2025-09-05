@@ -151,7 +151,7 @@ def load_all_checkers(analyzer: AlphaAnalyzer, csv_dir: str):
                     
                     # Special handling for PM constraint checker
                     if 'pm_constraint' in py_file.name.lower():
-                        pm_file = Path(csv_dir) / 'PMVirtualPosEv.csv'
+                        pm_file = Path(csv_dir) / 'VposResEv.csv'
                         if pm_file.exists():
                             import pandas as pd
                             pm_df = pd.read_csv(pm_file, delimiter='|')

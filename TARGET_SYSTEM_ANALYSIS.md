@@ -97,7 +97,7 @@ This document describes my understanding of the **Target Alpha Management System
   - **Attribution Mapping**: Maps trader positions back to originating PM strategies
   - **Virtual Position Creation**: Generates PM-level virtual positions for risk management
 - **Input**: Trader realtime positions (SplitCtxEv)
-- **Output**: PM virtual positions (PMVirtualPosEv) - used for T+1 constraint validation
+- **Output**: PM virtual positions (VposResEv) - used for T+1 constraint validation
 - **Business Purpose**: Enables PM-level risk management and performance attribution
 
 ### Risk Management System

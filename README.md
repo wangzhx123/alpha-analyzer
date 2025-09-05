@@ -43,7 +43,7 @@ python main.py --csv-dir production_data --ti 93000000 --ticker "000001.SZE"
 - `SplitCtxEv.csv` - Position context
 - `MergedAlphaEv.csv` - Merged upstream alpha [optional]
 - `MarketDataEv.csv` - Market data [optional]
-- `PMVirtualPosEv.csv` - PM virtual positions [optional, enables T+1 constraint checking]
+- `VposResEv.csv` - PM virtual positions [optional, enables T+1 constraint checking]
 
 ## Auto-Loaded Checkers
 
