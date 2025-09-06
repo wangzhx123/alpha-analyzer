@@ -18,10 +18,16 @@ class BaseChecker(ABC):
     def name(self) -> str:
         """Return checker name for reporting"""
         pass
-    
+
     @abstractmethod
-    def check(self, incheck_alpha_df: pd.DataFrame, merged_df: pd.DataFrame, split_alpha_df: pd.DataFrame, 
-              realtime_pos_df: pd.DataFrame, market_df: pd.DataFrame = None) -> CheckResult:
+    def check(
+        self,
+        incheck_alpha_df: pd.DataFrame,
+        merged_df: pd.DataFrame,
+        split_alpha_df: pd.DataFrame,
+        realtime_pos_df: pd.DataFrame,
+        market_df: pd.DataFrame = None,
+    ) -> CheckResult:
         """
         Run the check on incheck, merged, split, position and market data
         Args:
