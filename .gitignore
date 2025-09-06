@@ -25,3 +25,11 @@ htmlcov/
 # Temporary files
 *.tmp
 *.log
+
+# Generated files
+*.png
+fill_rate_*.png
+uv.lock
+
+# Virtual environment (uv)
+.venv/
