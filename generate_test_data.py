@@ -13,10 +13,13 @@ class TestDataGenerator:
     
     Scenario:
     - 3000 tickers (XXXXXX.SSE format)
-    - 5 Portfolio Managers (PM1-PM5)  
-    - 5 Traders (TRD1-TRD5)
-    - Time intervals: 10min from 93000000 to 150000000 (break 113000000-130000000)
+    - 5 Portfolio Managers (sSZE111BUCS to sSZE115BUCS)  
+    - 5 Traders (sSZE111Atem to sSZE115Atem)
+    - Time intervals: 26 intervals, 9:30-11:30, 13:00-15:00 (China trading hours)
     - Fill rates: 0.8-0.9 for realistic execution
+    
+    CONSTRAINT: Every PM must have alphas for at least 1000 tickers per time event
+    This ensures comprehensive institutional coverage and realistic trading patterns.
     """
     
     def __init__(self, output_dir: str = "test_data"):
@@ -95,19 +98,44 @@ class TestDataGenerator:
         return times
     
     def generate_pm_signals(self) -> pd.DataFrame:
-        """Generate InCheckAlphaEv.csv - PM alpha signals"""
+        """Generate InCheckAlphaEv.csv - PM alpha signals
+        
+        CONSTRAINT: Every PM must have alphas for at least 1000 tickers per time event
+        This ensures comprehensive coverage and realistic institutional trading patterns.
+        """
         print("Generating PM alpha signals...")
         
         records = []
-        event_id = 1
         
+        # First generate nil_last_alpha entries (previous day's closing positions)
+        print("  Generating nil_last_alpha (previous day closing positions)...")
+        for pm_id in self.pm_ids:
+            # Each PM had positions from previous day
+            num_prev_holdings = min(1000, len(self.tickers))
+            prev_holdings = random.sample(self.tickers, num_prev_holdings)
+            
+            for ticker in prev_holdings:
+                # Previous day closing position (can be positive or negative, no short selling constraint here)
+                prev_volume = random.randint(-5000, 10000)  # Previous positions can include shorts
+                if prev_volume != 0:  # Only record non-zero positions
+                    records.append({
+                        'event': 'InCheckAlphaEv',
+                        'alphaid': pm_id,
+                        'time': 'nil_last_alpha',
+                        'ticker': ticker,
+                        'volume': prev_volume
+                    })
+        
+        # Then generate regular time event signals
+        print("  Generating intraday alpha signals...")
         for time_event in self.time_events:
             # Each PM generates signals for a random subset of tickers
             for pm_id in self.pm_ids:
-                # PM trades 200-500 tickers per time event (or all available if fewer)
-                max_tickers = min(500, len(self.tickers))
-                min_tickers = min(200, len(self.tickers))
-                num_active_tickers = random.randint(min_tickers, max_tickers)
+                # CONSTRAINT: All PMs must have alphas for at least 1000 tickers per time event
+                min_required_tickers = min(1000, len(self.tickers))  # At least 1000 or all available
+                max_tickers = min(1500, len(self.tickers))  # Upper limit for variety
+                
+                num_active_tickers = random.randint(min_required_tickers, max_tickers)
                 active_tickers = random.sample(self.tickers, num_active_tickers)
                 
                 for ticker in active_tickers:
@@ -116,16 +144,19 @@ class TestDataGenerator:
                     volume = random.randint(1, 1000) * 100
                     
                     records.append({
-                        'event': event_id,
+                        'event': 'InCheckAlphaEv',
                         'alphaid': pm_id,
                         'time': time_event,
                         'ticker': ticker,
                         'volume': volume
                     })
-                    event_id += 1
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} PM signal records")
+        
+        # Validate PM coverage constraint
+        self._validate_pm_coverage_constraint(df)
+        
         return df
     
     def generate_merged_signals(self, incheck_df: pd.DataFrame) -> pd.DataFrame:
@@ -133,7 +164,6 @@ class TestDataGenerator:
         print("Generating merged alpha signals...")
         
         records = []
-        event_id = 1
         
         # Group by time and ticker, then consolidate PM signals
         for time_event in self.time_events:
@@ -154,13 +184,12 @@ class TestDataGenerator:
                     group_id = f"GRP_{time_event}_{ticker}"
                     
                     records.append({
-                        'event': event_id,
+                        'event': 'MergedAlphaEv',
                         'alphaid': group_id,
                         'time': time_event,
                         'ticker': ticker,
                         'volume': total_volume
                     })
-                    event_id += 1
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} merged signal records")
@@ -171,7 +200,6 @@ class TestDataGenerator:
         print("Generating split alpha signals...")
         
         records = []
-        event_id = 1
         
         for _, merged_row in merged_df.iterrows():
             total_volume = merged_row['volume']
@@ -200,13 +228,12 @@ class TestDataGenerator:
                 
                 # Create split signal
                 records.append({
-                    'event': event_id,
+                    'event': 'SplitAlphaEv',
                     'alphaid': trader_id,
                     'time': time_event,
                     'ticker': ticker,
                     'volume': trader_volume
                 })
-                event_id += 1
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} split signal records")
@@ -217,7 +244,6 @@ class TestDataGenerator:
         print("Generating position context with fill rates...")
         
         records = []
-        event_id = 1
         
         # Track trader positions over time
         trader_positions = {}  # {(trader, ticker): position}
@@ -263,7 +289,7 @@ class TestDataGenerator:
                     realtime_short_pos = max(0, -new_pos)
                     
                     records.append({
-                        'event': event_id,
+                        'event': 'SplitCtxEv',
                         'alphaid': trader,
                         'time': time_event,
                         'ticker': ticker,
@@ -272,7 +298,6 @@ class TestDataGenerator:
                         'realtime_short_pos': realtime_short_pos,
                         'realtime_avail_shot_vol': avail_short_vol
                     })
-                    event_id += 1
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} position context records")
@@ -283,7 +308,6 @@ class TestDataGenerator:
         print("Generating market data...")
         
         records = []
-        event_id = 1
         
         # Initialize random prices for each ticker
         base_prices = {ticker: random.uniform(10.0, 200.0) for ticker in self.tickers}
@@ -301,21 +325,24 @@ class TestDataGenerator:
                 base_prices[ticker] = last_price
                 
                 records.append({
-                    'event': event_id,
+                    'event': 'MarketDataEv',
                     'alphaid': 'MARKET',
                     'time': time_event,
                     'ticker': ticker,
                     'last_price': round(last_price, 2),
                     'prev_close_price': round(prev_close, 2)
                 })
-                event_id += 1
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} market data records")
         return df
     
     def generate_pm_virtual_positions(self, incheck_df: pd.DataFrame) -> pd.DataFrame:
-        """Generate VposResEv.csv - PM virtual positions for T+1 constraints"""
+        """Generate VposResEv.csv - PM virtual positions for T+1 constraints
+        
+        CONSTRAINT: Pre-open positions (time = -1) must exactly match the 
+        nil_last_alpha entries in InCheckAlphaEv.csv to ensure consistency.
+        """
         print("Generating PM virtual positions...")
         
         records = []
@@ -323,55 +350,97 @@ class TestDataGenerator:
         # Track PM virtual positions
         pm_positions = {}  # {(pm, ticker): position}
         
-        # Initialize with previous day positions (time = -1)
-        for pm_id in self.pm_ids:
-            num_holdings = min(1000, len(self.tickers))  # PMs don't hold all tickers
-            for ticker in random.sample(self.tickers, num_holdings):
-                initial_pos = random.randint(-10000, 10000)
-                pm_positions[(pm_id, ticker)] = initial_pos
-                
-                # Add previous day record
-                records.append({
-                    'time': -1,
-                    'ticker': ticker,
-                    'vpos': initial_pos
-                })
+        # Initialize with previous day positions (time = -1) that MATCH nil_last_alpha
+        # Extract all nil_last_alpha entries to ensure consistency
+        nil_alpha_data = incheck_df[incheck_df['time'] == 'nil_last_alpha']
+        
+        for _, row in nil_alpha_data.iterrows():
+            pm_id = row['alphaid']
+            ticker = row['ticker'] 
+            # Pre-open position MUST match the nil_last_alpha volume
+            initial_pos = row['volume']
+            pm_positions[(pm_id, ticker)] = initial_pos
+            
+            # Add previous day record
+            records.append({
+                'time': -1,
+                'ticker': ticker,
+                'vpos': initial_pos
+            })
         
         # Generate virtual positions for each time event
+        # At market open (930000000), positions are same as previous day close (no trades executed yet)
+        # Subsequent times show gradual execution towards alpha targets
         for time_event in self.time_events:
-            time_data = incheck_df[incheck_df['time'] == time_event]
-            
-            for pm_id in self.pm_ids:
-                pm_data = time_data[time_data['alphaid'] == pm_id]
-                
-                for ticker in self.tickers:
-                    current_pos = pm_positions.get((pm_id, ticker), 0)
-                    
-                    # Check if PM has signal for this ticker
-                    ticker_signals = pm_data[pm_data['ticker'] == ticker]
-                    
-                    if not ticker_signals.empty:
-                        # Update virtual position based on signal
-                        signal_volume = ticker_signals['volume'].sum()
-                        # Apply some execution efficiency (not perfect fill)
-                        fill_rate = random.uniform(0.85, 0.95)
-                        actual_change = round(signal_volume * fill_rate / 100) * 100
-                        new_pos = current_pos + actual_change
-                        pm_positions[(pm_id, ticker)] = new_pos
-                    else:
-                        new_pos = current_pos
-                    
-                    # Only record if position exists
-                    if new_pos != 0:
-                        records.append({
-                            'time': time_event,
-                            'ticker': ticker,
-                            'vpos': new_pos
-                        })
+            if time_event == self.time_events[0]:  # First time event (930000000)
+                # At market open, positions are same as previous day close
+                for pm_id in self.pm_ids:
+                    for ticker in self.tickers:
+                        prev_pos = pm_positions.get((pm_id, ticker), 0)
+                        if prev_pos != 0:  # Only record non-zero positions
+                            records.append({
+                                'time': time_event,
+                                'ticker': ticker,
+                                'vpos': prev_pos  # Same as previous day close
+                            })
+            else:
+                # For later times, positions will be updated based on executions
+                # This will be handled by update_positions_with_executions()
+                for pm_id in self.pm_ids:
+                    for ticker in self.tickers:
+                        current_pos = pm_positions.get((pm_id, ticker), 0)
+                        if current_pos != 0:  # Only record existing positions for now
+                            records.append({
+                                'time': time_event,
+                                'ticker': ticker,
+                                'vpos': current_pos  # Will be updated later
+                            })
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} PM virtual position records")
         return df
+    
+    def update_positions_with_executions(self, vpos_df: pd.DataFrame, splitctx_df: pd.DataFrame) -> pd.DataFrame:
+        """Update virtual positions based on actual execution results from SplitCtx"""
+        print("Updating positions with actual execution results...")
+        
+        # Create a copy for modification
+        updated_vpos = vpos_df.copy()
+        
+        # Aggregate trader positions by PM for each time/ticker
+        pm_positions = {}  # {(pm, ticker, time): total_position}
+        
+        # Sum all trader positions for each PM
+        for _, ctx_row in splitctx_df.iterrows():
+            trader_id = ctx_row['alphaid']
+            ticker = ctx_row['ticker']
+            time_event = ctx_row['time']
+            trader_pos = ctx_row['realtime_pos']
+            
+            # Map trader back to PM (sSZE111Atem -> sSZE111BUCS)
+            pm_id = trader_id.replace('Atem', 'BUCS')
+            
+            key = (pm_id, ticker, time_event)
+            pm_positions[key] = pm_positions.get(key, 0) + trader_pos
+        
+        # Update VposResEv records with aggregated PM positions
+        # Skip the first time event (930000000) since positions there equal previous day close
+        for time_event in self.time_events[1:]:  # Start from second time event
+            for pm_id in self.pm_ids:
+                for ticker in self.tickers:
+                    pm_key = (pm_id, ticker, time_event)
+                    if pm_key in pm_positions:
+                        new_pos = pm_positions[pm_key]
+                        
+                        # Update the position record
+                        update_mask = (updated_vpos['time'] == time_event) & (updated_vpos['ticker'] == ticker)
+                        if update_mask.any():
+                            updated_vpos.loc[update_mask, 'vpos'] = new_pos
+                        elif new_pos != 0:  # Add new record if position is non-zero
+                            new_record = pd.DataFrame([{'time': time_event, 'ticker': ticker, 'vpos': new_pos}])
+                            updated_vpos = pd.concat([updated_vpos, new_record], ignore_index=True)
+        
+        return updated_vpos
     
     def generate_all_data(self):
         """Generate complete test dataset"""
@@ -386,6 +455,9 @@ class TestDataGenerator:
         context_df = self.generate_position_context(split_df)
         market_df = self.generate_market_data()
         vpos_df = self.generate_pm_virtual_positions(incheck_df)
+        
+        # Update positions based on actual execution results
+        vpos_df = self.update_positions_with_executions(vpos_df, context_df)
         
         # Save to CSV files
         print("\nSaving data files...")
@@ -409,6 +481,48 @@ class TestDataGenerator:
         print(f"  Total records: {len(incheck_df) + len(merged_df) + len(split_df) + len(context_df) + len(market_df) + len(vpos_df):,}")
         print(f"  Expected alpha conservation: ✓")
         print(f"  Fill rate range: {self.fill_rate_min}-{self.fill_rate_max}")
+        print(f"  PM coverage constraint: ✓ (≥{min(1000, self.num_tickers)} tickers per PM per time event)")
+
+    def _validate_pm_coverage_constraint(self, df: pd.DataFrame):
+        """Validate that every PM has alphas for at least 1000 tickers per time event"""
+        print("  Validating PM coverage constraint...")
+        
+        constraint_violations = []
+        min_required = min(1000, self.num_tickers)
+        
+        for time_event in self.time_events:
+            time_data = df[df['time'] == time_event]
+            
+            for pm_id in self.pm_ids:
+                pm_data = time_data[time_data['alphaid'] == pm_id]
+                ticker_count = pm_data['ticker'].nunique()
+                
+                if ticker_count < min_required:
+                    constraint_violations.append(
+                        f"PM {pm_id} at time {self._format_time(time_event)}: "
+                        f"only {ticker_count} tickers (required: {min_required})"
+                    )
+        
+        if constraint_violations:
+            print("  ❌ PM Coverage Constraint Violations:")
+            for violation in constraint_violations[:5]:  # Show first 5
+                print(f"    {violation}")
+            if len(constraint_violations) > 5:
+                print(f"    ... and {len(constraint_violations) - 5} more violations")
+            raise ValueError(f"PM coverage constraint failed: {len(constraint_violations)} violations")
+        else:
+            print(f"  ✅ PM Coverage Constraint: All {self.num_pms} PMs have ≥{min_required} tickers per time event")
+
+    def _format_time(self, time_int):
+        """Convert time integer to readable format"""
+        time_str = str(time_int)
+        if time_int < 100000000:
+            hour = int(time_str[0])
+            minute = int(time_str[1:3])
+        else:
+            hour = int(time_str[0:2])
+            minute = int(time_str[2:4])
+        return f"{hour:02d}:{minute:02d}"
 
 
 def main():

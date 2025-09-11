@@ -45,6 +45,24 @@ This document describes my understanding of the **Target Alpha Management System
 
 The system operates on a **dual-system architecture** with bidirectional data flow:
 
+### **CRITICAL: Alpha Signal Timeline & Position Alignment**
+
+**Understanding the Trading Timeline:**
+1. **Previous Day Close**: Positions recorded as `time = -1` in VposResEv.csv
+2. **Pre-Open Alpha**: Same closing positions appear as `nil_last_alpha` in InCheckAlphaEv.csv
+3. **Market Open (930000000)**: 
+   - Alpha signals sent (InCheckAlphaEv): PM wants position X **before next ti (940000000)**
+   - Positions in VposResEv.csv are **identical to previous day close** (no execution yet)
+   - **Key**: Alpha = target to achieve before next signal arrives
+4. **Execution Period (930000000-940000000)**: Traders work towards the alpha target
+5. **Next Alpha (940000000)**: New target sent, VposResEv shows execution progress from previous period
+
+**Data Alignment Requirements:**
+- `VposResEv.csv time=-1` MUST exactly match `InCheckAlphaEv nil_last_alpha` volumes
+- `VposResEv.csv time=930000000` MUST equal `time=-1` positions (no trades executed yet)
+- `VposResEv.csv` reflects **realtime position snapshots** at each specified time
+- Later times show positions updated based on cumulative executions up to that moment
+
 ### **SYSTEM 1: MERGE SYSTEM** (Forward Flow: PMs → Traders)
 **Purpose**: Process and distribute trading alphas from Portfolio Managers to execution traders
 
@@ -174,8 +192,9 @@ SplitCtxEv.csv → Position Attribution → SplitVPos Processing → VposResEv.c
 ### InCheckAlphaEv.csv
 **Content**: Post-validation alpha signals from Portfolio Managers
 **Structure**: event|alphaid|time|ticker|volume
-**Business Meaning**: PM alpha signals that have passed checking and are ready for merging
-**Example**: PM wants 10,000 shares of AAPL at 9:30 AM after validation
+**Business Meaning**: **Alpha target positions** that PM expects to achieve before the next ti (time interval) arrives
+**Key Insight**: Each alpha represents the desired position state by the time the next alpha signal is sent
+**Example**: At ti=930000000, PM wants to reach 10,000 shares before ti=940000000 alpha arrives
 
 ### MergedAlphaEv.csv  
 **Content**: Consolidated alpha targets after merge processing
@@ -198,8 +217,9 @@ SplitCtxEv.csv → Position Attribution → SplitVPos Processing → VposResEv.c
 ### VposResEv.csv
 **Content**: PM virtual positions from SplitVPos processing
 **Structure**: time|ticker|vpos
-**Business Meaning**: PM-level virtual positions for risk management and T+1 constraints
-**Example**: PM virtual position of 5,000 shares used for constraint validation
+**Business Meaning**: **Realtime position snapshots** at each specified time for risk management and T+1 constraints
+**Key Insight**: Each record shows the actual position held at that exact moment in time
+**Example**: At time=940000000, PM holds 5,200 shares (reflects all executions up to 9:40 AM)
 
 ## Time-Based Event Processing
 
@@ -221,11 +241,37 @@ Day N Trading:
 │   ├── PM generates alpha → InCheckAlphaEv  
 │   ├── Merge processing → MergedAlphaEv
 │   ├── Split processing → SplitAlphaEv
-│   ├── Trader execution → SplitCtxEv
-│   └── Position attribution → VposResEv
+│   ├── VposResEv snapshot = previous day close (NO execution yet)
+│   └── Traders receive alphas but don't execute immediately
 │
-├── ti = 93100000 (9:31 AM): [Repeat cycle]
+├── ti = 93100000 (9:31 AM): 
+│   ├── Trader execution begins → SplitCtxEv
+│   ├── VposResEv snapshot = updated realtime positions at 9:31 AM
+│   └── [Repeat cycle]
 └── ... continues throughout trading day
+
+**Key**: VposResEv.csv provides position snapshots "as of" each timestamp
+
+## Fill Rate Analysis & Metrics
+
+### Fill Rate Calculation (Critical Understanding)
+```
+Fill Rate = Actual Executed Volume / Required Volume Change
+
+Where:
+- Required Volume Change = New Alpha Target - Previous Position  
+- Previous Position = VposResEv time=-1 (or nil_last_alpha)
+- New Alpha Target = InCheckAlphaEv time=930000000
+- Actual Executed = Cumulative execution from SplitCtxEv
+```
+
+**Example Timeline:**
+1. **Previous Day Close**: 5,000 shares (VposResEv time=-1 snapshot)
+2. **930000000 Alpha**: Target 6,000 shares **before 940000000** (InCheckAlphaEv)
+3. **Required Change**: +1,000 shares (to achieve before next alpha)
+4. **930000000 Position**: Still 5,000 shares (VposResEv snapshot, no execution yet)
+5. **940000000 Position**: 5,271 shares (VposResEv snapshot - execution progress towards target)
+6. **Fill Rate**: (5,271-5,000)/(6,000-5,000) = 271/1000 = 0.271 (27.1% achieved)
 ```
 
 ## Risk Management & Constraints
