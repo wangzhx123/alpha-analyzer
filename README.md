@@ -27,14 +27,17 @@ uv pip install pandas matplotlib
 # 1. Validation + Overview Analysis
 python main.py --csv-dir production_data
 
-# 2. Time Event Analysis (all tickers at ti=93000000)
-python main.py --csv-dir production_data --ti 93000000
+# 2. Time Event Analysis (all tickers at ti=930000000)
+python main.py --csv-dir production_data --ti 930000000
 
-# 3. Ticker Timeline Analysis (000001.SZE across all times)  
-python main.py --csv-dir production_data --ticker "000001.SZE"
+# 3. Ticker Timeline Analysis (000001.SSE across all times)  
+python main.py --csv-dir production_data --ticker "000001.SSE"
 
 # 4. Deep Analysis (specific ti+ticker combination)
-python main.py --csv-dir production_data --ti 93000000 --ticker "000001.SZE"
+python main.py --csv-dir production_data --ti 930000000 --ticker "000001.SSE"
+
+# 5. Debug Mode - Export filtered data for inspection
+python main.py --csv-dir production_data --ticker "000001.SSE" --detail
 ```
 
 ### Required CSV Files (Pipe-Delimited)
@@ -134,10 +137,64 @@ alpha_analyzer/
 - **Ticker Timeline**: Line chart showing performance over time  
 - **Deep Analysis**: 2x2 dashboard with detailed breakdown
 
+## Performance Features
+
+### 🚀 **Smart Data Filtering**
+The analyzer now includes intelligent filtering for massive performance improvements:
+
+- **Time Filtering (`--ti`)**: Process only specific time events (99%+ data reduction)
+- **Ticker Filtering (`--ticker`)**: Process only specific tickers (99%+ data reduction)  
+- **Combined Filtering**: Process specific time+ticker combinations for focused analysis
+- **Progress Indicators**: Real-time feedback showing exactly what's being processed
+
+### 📊 **Debug & Inspection Tools**
+
+- **`--detail` Flag**: Export filtered data to `/tmp/` for inspection
+- **Timestamped Files**: Automatic file naming with filters and timestamps
+- **Summary Reports**: Comprehensive data range and filter summaries
+- **Clean Output**: All debug files and plots saved to `/tmp/` (no workspace clutter)
+
+### ⚡ **Example Performance Gains**
+```bash
+# Large dataset: 944K records → 218 records (99.98% reduction)
+python main.py --csv-dir final_pressure_test --ticker "000001.SSE"
+
+# Time-specific: 944K records → 36K records (96% reduction)  
+python main.py --csv-dir final_pressure_test --ti 930000000
+
+# Deep analysis: 944K records → 8 records (99.999% reduction)
+python main.py --csv-dir final_pressure_test --ti 930000000 --ticker "000001.SSE"
+```
+
 ## Key Features
 
 ✅ **Auto-Loading**: Drop checkers in `checkers/` directory - no registration needed  
 ✅ **Multi-Interface**: Different detail levels based on parameters  
+✅ **Smart Filtering**: Massive performance gains through intelligent data filtering
+✅ **Debug Tools**: Export filtered data and plots for detailed inspection
+✅ **Progress Tracking**: Real-time feedback on data processing steps
 ✅ **Clean Design**: Single analyzer with intelligent behavior  
 ✅ **Production Ready**: Robust error handling and data validation  
 ✅ **Extensible**: Easy to add new checkers and analyzers
+
+## Pressure Testing
+
+### Generate Test Data
+```bash
+# Generate realistic China stock market test data
+python generate_test_data.py --output-dir my_test_data --tickers 3000
+
+# Generates:
+# - 3,000 tickers (000001.SSE to 003000.SSE)
+# - 5 Portfolio Managers (sSZE111BUCS to sSZE115BUCS)  
+# - 5 Traders (sSZE111Atem to sSZE115Atem)
+# - 26 time events (9:30-11:30, 13:00-15:00, 10min intervals)
+# - ~944K records, ~42MB realistic trading data
+```
+
+### Test Data Features
+- ✅ **No Short Selling**: All volumes ≥ 0 (China market compliance)
+- ✅ **Realistic Fill Rates**: 80-90% execution efficiency  
+- ✅ **Proper Time Encoding**: Valid China trading hours (930000000 = 9:30 AM)
+- ✅ **Business Rule Compliance**: Exactly 2 traders per allocation, 100-share lots
+- ✅ **T+1 Constraints**: Previous day positions for realistic constraint testing

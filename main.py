@@ -32,6 +32,11 @@ Analysis modes:
     parser.add_argument("--ticker", help='Analyze specific ticker (e.g. "000001.SZE")')
 
     parser.add_argument(
+        "--detail", action="store_true", 
+        help="Dump filtered data to CSV files for inspection (saves to current directory)"
+    )
+
+    parser.add_argument(
         "--version", action="version", version="Alpha Analyzer Framework 2.0"
     )
 
@@ -46,9 +51,15 @@ Analysis modes:
         load_all_checkers(analyzer, csv_dir)
         load_all_analyzers(analyzer)
 
-        # Load data
+        # Load data with optional filtering for performance
         print(f"Loading data from: {csv_dir}")
-        analyzer.load_data(csv_dir)
+        if args.ti or args.ticker:
+            print(f"Applying data filters: ti={args.ti}, ticker={args.ticker}")
+        analyzer.load_data(csv_dir, ti_filter=args.ti, ticker_filter=args.ticker)
+
+        # Dump filtered data if --detail requested
+        if args.detail:
+            dump_filtered_data(analyzer, args.ti, args.ticker)
 
         # Run checks
         results = analyzer.run_checks()
@@ -227,6 +238,101 @@ def run_analysis_mode(analyzer: AlphaAnalyzer, ti: int = None, ticker: str = Non
     # Run all analyzers with the specified interface
     results = analyzer.run_analysis(ti=ti, ticker=ticker)
     print_analysis_results(results)
+
+
+def dump_filtered_data(analyzer: AlphaAnalyzer, ti_filter=None, ticker_filter=None):
+    """Dump filtered data to CSV files for inspection in /tmp directory"""
+    import os
+    from datetime import datetime
+    
+    # Use /tmp directory for output
+    output_dir = "/tmp"
+    
+    # Create descriptive filename suffix
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filter_desc = []
+    if ti_filter:
+        filter_desc.append(f"ti{ti_filter}")
+    if ticker_filter:
+        filter_desc.append(f"ticker{ticker_filter.replace('.', '_')}")
+    
+    if filter_desc:
+        suffix = f"_{'_'.join(filter_desc)}_{timestamp}"
+    else:
+        suffix = f"_full_{timestamp}"
+    
+    print(f"\n🔍 DETAIL MODE: Dumping filtered data to {output_dir}...")
+    
+    # Dump each dataframe to CSV
+    files_created = []
+    
+    if analyzer.incheck_alpha_df is not None and len(analyzer.incheck_alpha_df) > 0:
+        filename = f"detail_InCheckAlphaEv{suffix}.csv"
+        filepath = os.path.join(output_dir, filename)
+        analyzer.incheck_alpha_df.to_csv(filepath, sep="|", index=False)
+        files_created.append(f"{filename} ({len(analyzer.incheck_alpha_df)} records)")
+    
+    if analyzer.merged_df is not None and len(analyzer.merged_df) > 0:
+        filename = f"detail_MergedAlphaEv{suffix}.csv"
+        filepath = os.path.join(output_dir, filename)
+        analyzer.merged_df.to_csv(filepath, sep="|", index=False)
+        files_created.append(f"{filename} ({len(analyzer.merged_df)} records)")
+    
+    if analyzer.split_alpha_df is not None and len(analyzer.split_alpha_df) > 0:
+        filename = f"detail_SplitAlphaEv{suffix}.csv"
+        filepath = os.path.join(output_dir, filename)
+        analyzer.split_alpha_df.to_csv(filepath, sep="|", index=False)
+        files_created.append(f"{filename} ({len(analyzer.split_alpha_df)} records)")
+    
+    if analyzer.realtime_pos_df is not None and len(analyzer.realtime_pos_df) > 0:
+        filename = f"detail_SplitCtxEv{suffix}.csv"
+        filepath = os.path.join(output_dir, filename)
+        analyzer.realtime_pos_df.to_csv(filepath, sep="|", index=False)
+        files_created.append(f"{filename} ({len(analyzer.realtime_pos_df)} records)")
+    
+    if analyzer.market_df is not None and len(analyzer.market_df) > 0:
+        filename = f"detail_MarketDataEv{suffix}.csv"
+        filepath = os.path.join(output_dir, filename)
+        analyzer.market_df.to_csv(filepath, sep="|", index=False)
+        files_created.append(f"{filename} ({len(analyzer.market_df)} records)")
+    
+    # Create summary file
+    summary_filename = f"detail_SUMMARY{suffix}.txt"
+    summary_filepath = os.path.join(output_dir, summary_filename)
+    with open(summary_filepath, 'w') as f:
+        f.write("ALPHA ANALYZER - FILTERED DATA DUMP\n")
+        f.write("=" * 50 + "\n\n")
+        f.write(f"Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Filter Applied:\n")
+        f.write(f"  Time (ti): {ti_filter if ti_filter else 'None'}\n")
+        f.write(f"  Ticker: {ticker_filter if ticker_filter else 'None'}\n\n")
+        
+        f.write("Files Created:\n")
+        for file_info in files_created:
+            f.write(f"  - {file_info}\n")
+        
+        f.write(f"\nData Summary:\n")
+        f.write(f"  InCheck Alpha: {len(analyzer.incheck_alpha_df) if analyzer.incheck_alpha_df is not None else 0:,} records\n")
+        f.write(f"  Merged Alpha: {len(analyzer.merged_df) if analyzer.merged_df is not None else 0:,} records\n")
+        f.write(f"  Split Alpha: {len(analyzer.split_alpha_df) if analyzer.split_alpha_df is not None else 0:,} records\n")
+        f.write(f"  Position Data: {len(analyzer.realtime_pos_df) if analyzer.realtime_pos_df is not None else 0:,} records\n")
+        f.write(f"  Market Data: {len(analyzer.market_df) if analyzer.market_df is not None else 0:,} records\n")
+        
+        # Add data ranges
+        f.write(f"\nData Ranges:\n")
+        if analyzer.incheck_alpha_df is not None and len(analyzer.incheck_alpha_df) > 0:
+            times = sorted(analyzer.incheck_alpha_df['time'].unique())
+            tickers = sorted(analyzer.incheck_alpha_df['ticker'].unique())
+            f.write(f"  Time Range: {times[0]} to {times[-1]} ({len(times)} unique times)\n")
+            f.write(f"  Tickers: {len(tickers)} unique ({tickers[0]} to {tickers[-1] if len(tickers) > 1 else tickers[0]})\n")
+    
+    files_created.append(f"{summary_filename} (summary)")
+    
+    print(f"   Created {len(files_created)} files:")
+    for file_info in files_created:
+        print(f"     📄 {file_info}")
+    
+    print(f"   💾 Files saved to: {output_dir}")
 
 
 def print_analysis_results(results):

@@ -23,7 +23,7 @@ class AlphaAnalyzer:
         """Register a new analyzer"""
         self.analyzers.append(analyzer)
 
-    def load_data(self, data_dir: str):
+    def load_data(self, data_dir: str, ti_filter=None, ticker_filter=None):
         """
         Load CSV files with production format (pipe-delimited):
         - InCheckAlphaEv.csv: event|alphaid|time|ticker|volume
@@ -116,6 +116,11 @@ class AlphaAnalyzer:
         else:
             self.market_df = None
 
+        # Apply filters if specified
+        if ti_filter is not None or ticker_filter is not None:
+            print(f"Applying filters: ti={ti_filter}, ticker={ticker_filter}")
+            self._apply_data_filters(ti_filter, ticker_filter)
+
         market_records = len(self.market_df) if self.market_df is not None else 0
         print(
             f"Loaded {len(self.incheck_alpha_df)} incheck records, {len(self.merged_df)} merged records, "
@@ -157,6 +162,65 @@ class AlphaAnalyzer:
         """
         return time_value == -1 or time_value < 93000000
 
+    def _apply_data_filters(self, ti_filter=None, ticker_filter=None):
+        """Apply time and/or ticker filters to loaded data for performance"""
+        
+        # Filter incheck_alpha_df
+        if ti_filter is not None:
+            before = len(self.incheck_alpha_df)
+            self.incheck_alpha_df = self.incheck_alpha_df[self.incheck_alpha_df['time'] == ti_filter]
+            print(f"  InCheck filtered: {before:,} -> {len(self.incheck_alpha_df):,} records")
+        
+        if ticker_filter is not None:
+            before = len(self.incheck_alpha_df)
+            self.incheck_alpha_df = self.incheck_alpha_df[self.incheck_alpha_df['ticker'] == ticker_filter]
+            print(f"  InCheck filtered: {before:,} -> {len(self.incheck_alpha_df):,} records")
+        
+        # Filter merged_df
+        if ti_filter is not None:
+            before = len(self.merged_df)
+            self.merged_df = self.merged_df[self.merged_df['time'] == ti_filter]
+            print(f"  Merged filtered: {before:,} -> {len(self.merged_df):,} records")
+        
+        if ticker_filter is not None:
+            before = len(self.merged_df)
+            self.merged_df = self.merged_df[self.merged_df['ticker'] == ticker_filter]
+            print(f"  Merged filtered: {before:,} -> {len(self.merged_df):,} records")
+        
+        # Filter split_alpha_df
+        if ti_filter is not None:
+            before = len(self.split_alpha_df)
+            self.split_alpha_df = self.split_alpha_df[self.split_alpha_df['time'] == ti_filter]
+            print(f"  Split filtered: {before:,} -> {len(self.split_alpha_df):,} records")
+        
+        if ticker_filter is not None:
+            before = len(self.split_alpha_df)
+            self.split_alpha_df = self.split_alpha_df[self.split_alpha_df['ticker'] == ticker_filter]
+            print(f"  Split filtered: {before:,} -> {len(self.split_alpha_df):,} records")
+        
+        # Filter realtime_pos_df
+        if ti_filter is not None:
+            before = len(self.realtime_pos_df)
+            self.realtime_pos_df = self.realtime_pos_df[self.realtime_pos_df['time'] == ti_filter]
+            print(f"  Position filtered: {before:,} -> {len(self.realtime_pos_df):,} records")
+        
+        if ticker_filter is not None:
+            before = len(self.realtime_pos_df)
+            self.realtime_pos_df = self.realtime_pos_df[self.realtime_pos_df['ticker'] == ticker_filter]
+            print(f"  Position filtered: {before:,} -> {len(self.realtime_pos_df):,} records")
+        
+        # Filter market_df if it exists
+        if self.market_df is not None:
+            if ti_filter is not None:
+                before = len(self.market_df)
+                self.market_df = self.market_df[self.market_df['time'] == ti_filter]
+                print(f"  Market filtered: {before:,} -> {len(self.market_df):,} records")
+            
+            if ticker_filter is not None:
+                before = len(self.market_df)
+                self.market_df = self.market_df[self.market_df['ticker'] == ticker_filter]
+                print(f"  Market filtered: {before:,} -> {len(self.market_df):,} records")
+
     def run_checks(self) -> List[CheckResult]:
         """Execute all registered checkers"""
         if (
@@ -168,8 +232,11 @@ class AlphaAnalyzer:
             raise RuntimeError("Data not loaded. Call load_data() first.")
 
         results = []
-        for checker in self.checkers:
+        print(f"Running {len(self.checkers)} checkers...")
+        
+        for i, checker in enumerate(self.checkers, 1):
             try:
+                print(f"  [{i}/{len(self.checkers)}] Running {checker.name}...")
                 result = checker.check(
                     self.incheck_alpha_df,
                     self.merged_df,
@@ -177,8 +244,10 @@ class AlphaAnalyzer:
                     self.realtime_pos_df,
                     self.market_df,
                 )
+                print(f"  [{i}/{len(self.checkers)}] ✓ {checker.name} completed")
                 results.append(result)
             except Exception as e:
+                print(f"  [{i}/{len(self.checkers)}] ✗ {checker.name} failed: {str(e)}")
                 error_msg = f"Checker failed: {str(e)}"
                 results.append(
                     CheckResult(
@@ -198,9 +267,11 @@ class AlphaAnalyzer:
             raise RuntimeError("Data not loaded. Call load_data() first.")
 
         results = []
+        print(f"Running {len(self.analyzers)} analyzers...")
 
-        for analyzer in self.analyzers:
+        for i, analyzer in enumerate(self.analyzers, 1):
             try:
+                print(f"  [{i}/{len(self.analyzers)}] Running {analyzer.name}...")
                 result = None
 
                 if ti is not None and ticker is not None:
@@ -246,8 +317,12 @@ class AlphaAnalyzer:
 
                 if result is not None:
                     results.append(result)
+                    print(f"  [{i}/{len(self.analyzers)}] ✓ {analyzer.name} completed")
+                else:
+                    print(f"  [{i}/{len(self.analyzers)}] - {analyzer.name} skipped (not supported for this interface)")
 
             except Exception as e:
+                print(f"  [{i}/{len(self.analyzers)}] ✗ {analyzer.name} failed: {str(e)}")
                 error_result = AnalysisResult(
                     analyzer_name=analyzer.name, summary=f"Analysis failed: {str(e)}"
                 )

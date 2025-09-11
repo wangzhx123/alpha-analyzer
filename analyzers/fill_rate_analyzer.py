@@ -135,7 +135,7 @@ class FillRateAnalyzer(BaseAnalyzer):
         ax.set_title("Fill Rate Distribution (All)")
         ax.legend()
         plt.tight_layout()
-        plot_path = "fill_rate_overview.png"
+        plot_path = "/tmp/fill_rate_overview.png"
         plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -189,7 +189,7 @@ class FillRateAnalyzer(BaseAnalyzer):
         ax.legend()
         plt.xticks(rotation=45)
         plt.tight_layout()
-        plot_path = f"fill_rate_ti_{ti}.png"
+        plot_path = f"/tmp/fill_rate_ti_{ti}.png"
         plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -247,7 +247,7 @@ class FillRateAnalyzer(BaseAnalyzer):
         ax.set_title(f"Fill Rate Timeline ({ticker})")
         ax.legend()
         plt.tight_layout()
-        plot_path = f"fill_rate_{ticker}.png"
+        plot_path = f"/tmp/fill_rate_{ticker}.png"
         plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close()
 
@@ -370,7 +370,7 @@ Net Fill Rate: {finite_df['position_change'].sum() / finite_df['target_alpha'].s
         )
 
         plt.tight_layout()
-        plot_path = f"fill_rate_detailed_{ti}_{ticker}.png"
+        plot_path = f"/tmp/fill_rate_detailed_{ti}_{ticker}.png"
         plt.savefig(plot_path, dpi=150, bbox_inches="tight")
         plt.close()
 
