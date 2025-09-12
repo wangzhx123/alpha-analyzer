@@ -26,14 +26,36 @@ Analysis modes:
     )
 
     parser.add_argument(
-        "--ti", type=int, help="Analyze specific time event (e.g. 93000000)"
+        "--ti", type=int, nargs='*', help="Optional: Analyze specific time events (default: all times if --ticker provided)"
     )
 
-    parser.add_argument("--ticker", help='Analyze specific ticker (e.g. "000001.SZE")')
+    parser.add_argument(
+        "--ticker", nargs='*', help='Required for --analyze: Specific tickers to analyze (e.g. "000001.SSE" "000002.SSE")'
+    )
 
     parser.add_argument(
         "--detail", action="store_true", 
         help="Dump filtered data to CSV files for inspection (saves to current directory)"
+    )
+
+    parser.add_argument(
+        "--check", action="store_true",
+        help="Only run checkers (skip analyzers)"
+    )
+
+    parser.add_argument(
+        "--analyze", action="store_true", 
+        help="Only run analyzers (skip checkers)"
+    )
+
+    parser.add_argument(
+        "--sample", type=int, metavar="N",
+        help="For unfiltered analysis, sample N records for performance (default: require filters)"
+    )
+
+    parser.add_argument(
+        "--output", default="/tmp", 
+        help="Output directory for reports and plots (default: /tmp)"
     )
 
     parser.add_argument(
@@ -47,28 +69,50 @@ Analysis modes:
         # Initialize analyzer
         analyzer = AlphaAnalyzer()
 
-        # Auto-load all checkers and analyzers
-        load_all_checkers(analyzer, csv_dir)
-        load_all_analyzers(analyzer)
+        # Conditionally load checkers and/or analyzers
+        if not args.analyze:  # Load checkers unless --analyze flag is used
+            load_all_checkers(analyzer, csv_dir)
+        if not args.check:   # Load analyzers unless --check flag is used
+            load_all_analyzers(analyzer)
 
         # Load data with optional filtering for performance
         print(f"Loading data from: {csv_dir}")
         if args.ti or args.ticker:
             print(f"Applying data filters: ti={args.ti}, ticker={args.ticker}")
-        analyzer.load_data(csv_dir, ti_filter=args.ti, ticker_filter=args.ticker)
+        
+        # Handle different loading strategies for checkers vs analyzers
+        if not args.analyze:
+            # For checkers, use single ti/ticker filtering (checkers need consistent data)
+            single_ti = args.ti[0] if args.ti else None
+            single_ticker = args.ticker[0] if args.ticker else None
+            analyzer.load_data(csv_dir, ti_filter=single_ti, ticker_filter=single_ticker)
+        else:
+            # For analyzers, we'll load data on-demand per analysis
+            analyzer.csv_dir = csv_dir  # Store for on-demand loading
 
         # Dump filtered data if --detail requested
         if args.detail:
-            dump_filtered_data(analyzer, args.ti, args.ticker)
+            dump_filtered_data(analyzer, args.ti, args.ticker, args.output)
 
-        # Run checks
-        results = analyzer.run_checks()
+        # Run checks only if checkers were loaded
+        if not args.analyze:
+            results = analyzer.run_checks()
+            print_results(results)
+        else:
+            results = []
 
-        # Display results
-        print_results(results)
-
-        # Run analysis based on mode
-        run_analysis_mode(analyzer, args.ti, args.ticker)
+        # Run analysis only if analyzers were loaded
+        if not args.check:
+            if not args.ticker:
+                print("⚠️ ANALYZERS REQUIRE TICKER FILTERING: Use --ticker TICKER for analysis")
+                print("   Examples:")
+                print("     --ticker 000001.SSE                    (analyze ticker across all time intervals)")
+                print("     --ticker 000001.SSE 000002.SSE         (analyze multiple tickers)")
+                print("     --ticker 000001.SSE --ti 940000000     (analyze ticker at specific time)")
+                print("   Skipping analyzers for performance reasons.")
+            else:
+                # Run analysis for each combination of ti/ticker
+                run_filtered_analysis(analyzer, args.ti, args.ticker, args.output)
 
         # Exit with appropriate code
         failed_count = sum(1 for r in results if r.status in ["FAIL", "ERROR"])
@@ -219,47 +263,76 @@ def load_all_analyzers(analyzer: AlphaAnalyzer):
     print(f"Loaded {loaded_count} analyzers")
 
 
+def run_filtered_analysis(analyzer: AlphaAnalyzer, ti_list=None, ticker_list=None, output_dir="/tmp"):
+    """Run analysis for combinations of ti/ticker filters"""
+    
+    from pathlib import Path
+    import datetime
+    
+    # Create output directory structure
+    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    report_dir = Path(output_dir) / f"report-{timestamp}"
+    report_dir.mkdir(parents=True, exist_ok=True)
+    
+    print(f"📁 Reports will be saved to: {report_dir}")
+    
+    # Normalize inputs to lists
+    ti_values = ti_list if ti_list else [None]
+    ticker_values = ticker_list if ticker_list else [None]
+    
+    # Run analysis for each combination
+    for ti in ti_values:
+        for ticker in ticker_values:
+            if ti and ticker:
+                print(f"\n🔍 DEEP ANALYSIS: ti={ti}, ticker={ticker}")
+            elif ti:
+                print(f"\n📊 TIME EVENT ANALYSIS: ti={ti}")
+            elif ticker:
+                print(f"\n📈 TICKER ANALYSIS: {ticker}")
+            
+            # Load data with specific filtering for this analysis
+            print(f"Loading filtered data for ti={ti}, ticker={ticker}...")
+            try:
+                # Pass output directory to analyzer
+                analyzer.output_dir = report_dir
+                analyzer.load_data(analyzer.csv_dir, ti_filter=ti, ticker_filter=ticker)
+                results = analyzer.run_analysis(ti=ti, ticker=ticker)
+                print_analysis_results(results)
+            except Exception as e:
+                print(f"❌ Analysis failed for ti={ti}, ticker={ticker}: {str(e)}")
+    
+    print(f"\n📊 All reports saved to: {report_dir}")
+
+
 def run_analysis_mode(analyzer: AlphaAnalyzer, ti: int = None, ticker: str = None):
-    """Run analysis in different modes based on ti/ticker filters"""
-
-    if ti and ticker:
-        # Interface 4: Deep analysis for specific ti + ticker
-        print(f"\n🔍 DEEP ANALYSIS MODE")
-    elif ti:
-        # Interface 2: All tickers at specific time
-        print(f"\n📊 TIME EVENT ANALYSIS MODE")
-    elif ticker:
-        # Interface 3: Specific ticker across all times
-        print(f"\n📈 TICKER TIMELINE ANALYSIS MODE")
-    else:
-        # Interface 1: Overview mode
-        print(f"\n📊 OVERVIEW ANALYSIS MODE")
-
-    # Run all analyzers with the specified interface
-    results = analyzer.run_analysis(ti=ti, ticker=ticker)
-    print_analysis_results(results)
+    """Legacy function - kept for backward compatibility"""
+    run_filtered_analysis(analyzer, [ti] if ti else None, [ticker] if ticker else None)
 
 
-def dump_filtered_data(analyzer: AlphaAnalyzer, ti_filter=None, ticker_filter=None):
-    """Dump filtered data to CSV files for inspection in /tmp directory"""
+def dump_filtered_data(analyzer: AlphaAnalyzer, ti_filter=None, ticker_filter=None, output_dir="/tmp"):
+    """Dump filtered data to CSV files for inspection"""
     import os
     from datetime import datetime
+    from pathlib import Path
     
-    # Use /tmp directory for output
-    output_dir = "/tmp"
+    # Create debug data directory  
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    debug_dir = Path(output_dir) / f"debug-{timestamp}"
+    debug_dir.mkdir(parents=True, exist_ok=True)
     
     # Create descriptive filename suffix
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filter_desc = []
     if ti_filter:
-        filter_desc.append(f"ti{ti_filter}")
+        ti_val = ti_filter[0] if isinstance(ti_filter, list) else ti_filter
+        filter_desc.append(f"ti{ti_val}")
     if ticker_filter:
-        filter_desc.append(f"ticker{ticker_filter.replace('.', '_')}")
+        ticker_val = ticker_filter[0] if isinstance(ticker_filter, list) else ticker_filter
+        filter_desc.append(f"ticker{ticker_val.replace('.', '_')}")
     
     if filter_desc:
-        suffix = f"_{'_'.join(filter_desc)}_{timestamp}"
+        suffix = f"_{'_'.join(filter_desc)}_{timestamp.replace('-', '_')}"
     else:
-        suffix = f"_full_{timestamp}"
+        suffix = f"_full_{timestamp.replace('-', '_')}"
     
     print(f"\n🔍 DETAIL MODE: Dumping filtered data to {output_dir}...")
     
@@ -268,31 +341,31 @@ def dump_filtered_data(analyzer: AlphaAnalyzer, ti_filter=None, ticker_filter=No
     
     if analyzer.incheck_alpha_df is not None and len(analyzer.incheck_alpha_df) > 0:
         filename = f"detail_InCheckAlphaEv{suffix}.csv"
-        filepath = os.path.join(output_dir, filename)
+        filepath = debug_dir / filename
         analyzer.incheck_alpha_df.to_csv(filepath, sep="|", index=False)
         files_created.append(f"{filename} ({len(analyzer.incheck_alpha_df)} records)")
     
     if analyzer.merged_df is not None and len(analyzer.merged_df) > 0:
         filename = f"detail_MergedAlphaEv{suffix}.csv"
-        filepath = os.path.join(output_dir, filename)
+        filepath = debug_dir / filename
         analyzer.merged_df.to_csv(filepath, sep="|", index=False)
         files_created.append(f"{filename} ({len(analyzer.merged_df)} records)")
     
     if analyzer.split_alpha_df is not None and len(analyzer.split_alpha_df) > 0:
         filename = f"detail_SplitAlphaEv{suffix}.csv"
-        filepath = os.path.join(output_dir, filename)
+        filepath = debug_dir / filename
         analyzer.split_alpha_df.to_csv(filepath, sep="|", index=False)
         files_created.append(f"{filename} ({len(analyzer.split_alpha_df)} records)")
     
     if analyzer.realtime_pos_df is not None and len(analyzer.realtime_pos_df) > 0:
         filename = f"detail_SplitCtxEv{suffix}.csv"
-        filepath = os.path.join(output_dir, filename)
+        filepath = debug_dir / filename
         analyzer.realtime_pos_df.to_csv(filepath, sep="|", index=False)
         files_created.append(f"{filename} ({len(analyzer.realtime_pos_df)} records)")
     
     if analyzer.market_df is not None and len(analyzer.market_df) > 0:
         filename = f"detail_MarketDataEv{suffix}.csv"
-        filepath = os.path.join(output_dir, filename)
+        filepath = debug_dir / filename
         analyzer.market_df.to_csv(filepath, sep="|", index=False)
         files_created.append(f"{filename} ({len(analyzer.market_df)} records)")
     
@@ -332,7 +405,7 @@ def dump_filtered_data(analyzer: AlphaAnalyzer, ti_filter=None, ticker_filter=No
     for file_info in files_created:
         print(f"     📄 {file_info}")
     
-    print(f"   💾 Files saved to: {output_dir}")
+    print(f"   💾 Files saved to: {debug_dir}")
 
 
 def print_analysis_results(results):

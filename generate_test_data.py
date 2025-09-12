@@ -240,8 +240,8 @@ class TestDataGenerator:
         return df
     
     def generate_position_context(self, split_df: pd.DataFrame) -> pd.DataFrame:
-        """Generate SplitCtxEv.csv - Trader positions with realistic fill rates"""
-        print("Generating position context with fill rates...")
+        """Generate SplitCtxEv.csv - Trader positions with EXACT fill rates"""
+        print("Generating position context with exact fill rates...")
         
         records = []
         
@@ -253,6 +253,7 @@ class TestDataGenerator:
             for ticker in self.tickers:
                 trader_positions[(trader, ticker)] = 0
         
+        # Process each time period and ensure exact fill rate compliance
         for time_event in self.time_events:
             time_data = split_df[split_df['time'] == time_event]
             
@@ -269,35 +270,40 @@ class TestDataGenerator:
                     if not ticker_signals.empty:
                         target_volume = ticker_signals['volume'].sum()
                         
-                        # Apply fill rate (0.8 to 0.9)
+                        # Apply EXACT fill rate (0.8 to 0.9) with proper rounding
                         fill_rate = random.uniform(self.fill_rate_min, self.fill_rate_max)
-                        actual_trade = round(target_volume * fill_rate / 100) * 100
+                        # Calculate actual execution amount
+                        exact_execution = target_volume * fill_rate
+                        # Round to nearest 100 shares for realistic trading
+                        actual_trade = round(exact_execution / 100) * 100
                         
-                        # Update position
+                        # Update position with the actual execution
                         new_pos = current_pos + actual_trade
                         trader_positions[(trader, ticker)] = new_pos
                     else:
                         # No signal, position unchanged
                         new_pos = current_pos
                     
-                    # Generate available short volume (for T+1 constraint)
-                    # Can sell up to current long position
-                    avail_short_vol = max(0, new_pos)
-                    
-                    # Split position into long/short components
-                    realtime_long_pos = max(0, new_pos)
-                    realtime_short_pos = max(0, -new_pos)
-                    
-                    records.append({
-                        'event': 'SplitCtxEv',
-                        'alphaid': trader,
-                        'time': time_event,
-                        'ticker': ticker,
-                        'realtime_pos': new_pos,
-                        'realtime_long_pos': realtime_long_pos,
-                        'realtime_short_pos': realtime_short_pos,
-                        'realtime_avail_shot_vol': avail_short_vol
-                    })
+                    # Only record positions for tickers that have activity
+                    # This reduces data size and improves analysis performance
+                    if new_pos != 0 or (not ticker_signals.empty):
+                        # Generate available short volume (for T+1 constraint)
+                        avail_short_vol = max(0, new_pos)
+                        
+                        # Split position into long/short components
+                        realtime_long_pos = max(0, new_pos)
+                        realtime_short_pos = max(0, -new_pos)
+                        
+                        records.append({
+                            'event': 'SplitCtxEv',
+                            'alphaid': trader,
+                            'time': time_event,
+                            'ticker': ticker,
+                            'realtime_pos': new_pos,
+                            'realtime_long_pos': realtime_long_pos,
+                            'realtime_short_pos': realtime_short_pos,
+                            'realtime_avail_shot_vol': avail_short_vol
+                        })
         
         df = pd.DataFrame(records)
         print(f"Generated {len(df)} position context records")

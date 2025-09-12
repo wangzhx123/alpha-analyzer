@@ -33,6 +33,7 @@ class AlphaAnalyzer:
         - MarketDataEv.csv: event|alphaid|time|ticker|last_price|prev_close_price (optional)
         """
         data_path = Path(data_dir)
+        self.csv_dir = data_dir  # Store for analyzers that need unfiltered data
 
         # Load input alpha events (InCheckAlphaEv.csv)
         input_file = data_path / "InCheckAlphaEv.csv"
@@ -272,6 +273,8 @@ class AlphaAnalyzer:
         for i, analyzer in enumerate(self.analyzers, 1):
             try:
                 print(f"  [{i}/{len(self.analyzers)}] Running {analyzer.name}...")
+                # Pass reference to this analyzer so analyzers can access csv_dir
+                analyzer.analyzer_instance = self
                 result = None
 
                 if ti is not None and ticker is not None:
