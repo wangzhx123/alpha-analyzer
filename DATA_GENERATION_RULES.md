@@ -1,23 +1,36 @@
-# Data Generation Rules and Assumptions
+# Test Data Generation Rules
 
-This document lists **ALL** rules and assumptions used during sample data generation for the Alpha Analyzer system.
+This document specifies **ALL** rules used to generate test data that mimics production merge/split alpha trading system exports.
 
-**⚠️ DEPRECATED**: This document contains the original incorrect assumptions that were corrected based on user feedback. See `SYSTEM_UNDERSTANDING.md` for the correct system architecture.
+## **🎯 Purpose & Context**
 
-## **Corrections Applied:**
-- ✅ PM ticker overlap implemented (80-90% common tickers)
-- ✅ ID format: `PM_001BUCS`, `TRADER_001Atem`  
-- ✅ TVR logic: `New target = Previous target ± random(0.1, 0.6) × Previous target`
-- ✅ Even trader split: Merged alpha divided equally among all traders
-- ✅ MergedAlphaEv derived from sum of PM alphas
-- ✅ No filtering: ALL tickers covered in ALL files
-- ✅ Direction consistency: Buy means position increases only
+### **Test Data vs Production Reality**
+- **Test Data**: Simplified algorithms create structurally correct CSV files for framework validation
+- **Production Data**: Complex institutional trading systems export similar CSV structure with sophisticated algorithms
+- **Framework Goal**: Same validation code works on both test and production data
+
+### **Current Implementation Status**
+- ✅ **Correct Structure**: Test data matches production CSV format exactly
+- ⚙️ **Simplified Logic**: Uses basic algorithms (sum, divide) instead of complex production algorithms
+- 🔄 **Evolution Path**: Will gradually enhance algorithms to closer match production complexity
+- 🎯 **End Goal**: Test data indistinguishable from production data structurally
+
+## **📋 Test System Overview**
+
+> **Note**: This describes current simplified test data generation. Production systems use more sophisticated algorithms.
+
+The test merge/split system simulation:
+1. **Multiple PMs** generate target positions with TVR logic → **InCheckAlphaEv.csv**
+2. **Simple Merge** sums all PM targets by ticker/time → **MergedAlphaEv.csv**
+3. **Even Split** divides merged targets equally among traders → **SplitAlphaEv.csv**
+4. **Fill Rate Execution** applies 0.8-0.9 fill rates → **SplitCtxEv.csv**
+5. **Direct Attribution** sums trader positions back to PMs → **VposResEv.csv**
 
 ## **TICKER GENERATION RULES**
-1. **Ticker Universe**: Generate `num_pm × min_tickers_per_pm + 500` total tickers
-2. **Ticker Format**: 50% SSE stocks (`XXXXXX.SSE`), 50% SZSE stocks (`XXXXXX.SZSE`) 
+1. **Ticker Universe**: Generate specified number of tickers (default: 1000)
+2. **Ticker Format**: 50% SSE stocks (`XXXXXX.SSE`), 50% SZSE stocks (`XXXXXX.SZSE`)
 3. **Ticker Numbering**: Sequential from `000001` to `NNNNNN`
-4. **Ticker Distribution**: Randomly shuffle all tickers before assignment
+4. **PM Ticker Overlap**: 80-90% common tickers across all PMs + unique tickers per PM
 
 ## **TIME INTERVAL RULES**
 5. **Time Ranges**: Default morning [930000000, 1130000000] + afternoon [1300000000, 1500000000]
@@ -26,82 +39,75 @@ This document lists **ALL** rules and assumptions used during sample data genera
 8. **Time Ordering**: All intervals sorted chronologically
 
 ## **PM (PORTFOLIO MANAGER) RULES**
-9. **PM ID Format**: `PM001BUCS`, `PM002BUCS`, etc.
+9. **PM ID Format**: `PM_001BUCS`, `PM_002BUCS`, etc.
 10. **PM Count**: Configurable via `--num-pm` (default: 5)
-11. **PM Ticker Assignment**: Each PM gets exactly `min_tickers_per_pm` tickers per time interval
-12. **PM Ticker Selection**: Sequential assignment from shuffled ticker pool (no overlap between PMs)
-comment to 12: "no, of course we should have overlap ticker between pms, otherwise, why would we need such a merge alpha system at first place??"
-13. **PM Position Initialization**: First time seeing ticker → random target 1000-5000 × 100
-14. **PM Decision Logic**: 40% maintain, 20% close, 40% new target for existing tickers
-comment to 14: no, we need more tvr here. say all ticker's alpha volume change from [0.1, 0.6] of their prev alpha target.
-15. **PM Maintain Rule**: If maintain → target = previous target
-16. **PM Close Rule**: If close → target = 0  
-17. **PM New Target Rule**: If new target → random 1000-5000 × 100
+11. **PM Ticker Overlap**: 80-90% common tickers + some unique tickers per PM
+12. **PM Position Initialization**: First time seeing ticker → random target 1000-5000 × 100
+13. **PM TVR Logic**: All tickers change by ±[0.1, 0.6] × previous target
+14. **TVR Formula**: `New target = Previous target ± random(0.1, 0.6) × Previous target`
+15. **PM Target Minimum**: Ensure all targets ≥ 0 (non-negative positions)
 
 ## **TRADER RULES**
-18. **Trader ID Format**: `TR001Atem`, `TR002Atem`, etc.
-comment to 18: make it more explicit: for PM is PM_001/002... for trader, it's TRADER_001/002 ...
-19. **Trader Count**: Configurable via `--num-trader` (default: 5)
-20. **Trader Target Selection**: Each trader handles ~20% of total PM non-zero targets
-21. **Trader Target Sampling**: Random sample from all PM targets across all PMs
-22. **Trader Target Allocation**: Trader gets 60%-100% of selected PM target
-23. **Trader Signal Filter**: Only generate signals for targets > 0
-comment to 20-23: no, i still don't understand. our to-be-analyzed system, will merge and split all received alphas, and split evenly(current simple split algo) to all traders. that means, for a certain ticker, say merged target is 5000, then all 5 traders will get a 1000 alpha target for them to trader!!not just sampled!so your current understanding is totally wrong!!!
+16. **Trader ID Format**: `TRADER_001Atem`, `TRADER_002Atem`, etc.
+17. **Trader Count**: Configurable via `--num-trader` (default: 5)
+18. **Even Split Logic**: ALL traders participate in ALL signals
+19. **Split Calculation**: `Trader Target = Merged Target ÷ Number of Traders`
+20. **Remainder Distribution**: Distribute remainder to first few traders
+21. **Complete Coverage**: Every ticker with merged target gets split to all traders
 
 ## **POSITION EXECUTION RULES**
-24. **Fill Rate Range**: Configurable via `--fill-rate-min` and `--fill-rate-max` (default: 0.8-0.9)
-25. **Fill Rate Application**: `actual_trade = intended_trade × random_fill_rate`
-26. **Intended Trade Calculation**: `intended_trade = target_position - current_position`
-27. **Position Update**: `new_position = current_position + actual_trade`
-28. **Position Floor**: All positions ≥ 0 (no negative positions allowed)
-29. **Zero Trade Handling**: If intended_trade = 0 → no fill rate applied, position unchanged
+22. **Fill Rate Range**: Configurable via `--fill-rate-min` and `--fill-rate-max` (default: 0.8-0.9)
+23. **Fill Rate Application**: `actual_trade = intended_trade × random_fill_rate`
+24. **Intended Trade Calculation**: `intended_trade = target_position - current_position`
+25. **Position Update**: `new_position = current_position + actual_trade`
+26. **Position Floor**: All positions ≥ 0 (no negative positions allowed)
+27. **Direction Consistency**: Traders strictly follow trade direction (buy = position increases only)
+28. **Zero Trade Handling**: If intended_trade = 0 → no fill rate applied, position unchanged
 
 ## **MARKET DATA RULES**
-30. **Market Ticker Selection**: Random 2000 tickers per time interval (or all if < 2000)
-31. **Market ID**: Always `MARKET` for all market data
-32. **Price Generation**: Base price 10.0-200.0, prev_price ±5% variation, current_price ±2% from prev
-33. **Price Format**: 2 decimal places
+29. **Market Coverage**: ALL tickers at ALL time intervals (no filtering)
+30. **Market ID**: Always `MARKET` for all market data
+31. **Price Generation**: Base price 10.0-200.0, prev_price ±5% variation, current_price ±2% from prev
+32. **Price Format**: 2 decimal places
 
 ## **CSV FILE STRUCTURE RULES**
 
 ### **InCheckAlphaEv.csv (PM Alpha Signals)**
-34. **Format**: `event|alphaid|time|ticker|volume`
-35. **Event Type**: Always `InCheckAlphaEv`
-36. **AlphaID**: PM ID (e.g., `PM001BUCS`)
-37. **Volume Field**: Target position (NOT trade volume)
-38. **Record Count**: `num_pm × min_tickers_per_pm × num_time_intervals`
+33. **Format**: `event|alphaid|time|ticker|volume`
+34. **Event Type**: Always `InCheckAlphaEv`
+35. **AlphaID**: PM ID (e.g., `PM_001BUCS`)
+36. **Volume Field**: Target position (NOT trade volume)
+37. **Coverage**: ALL PM tickers at ALL time intervals
 
 ### **SplitAlphaEv.csv (Trader Alpha Signals)**
-39. **Format**: `event|alphaid|time|ticker|volume`
-40. **Event Type**: Always `SplitAlphaEv`  
-41. **AlphaID**: Trader ID (e.g., `TR001Atem`)
-42. **Volume Field**: Trader target position
-43. **Filter Rule**: Only include non-zero targets
-comment to 43, not sure what you said here, but we don't need any filter rule actually. just split the merged alpha target across traders, and trader just trade it according current pos!
+38. **Format**: `event|alphaid|time|ticker|volume`
+39. **Event Type**: Always `SplitAlphaEv`
+40. **AlphaID**: Trader ID (e.g., `TRADER_001Atem`)
+41. **Volume Field**: Trader target position (split from merged)
+42. **Coverage**: ALL merged targets split to ALL traders
 
 ### **SplitCtxEv.csv (Actual Positions)**
-44. **Format**: `event|alphaid|time|ticker|realtime_pos|realtime_long_pos|realtime_short_pos|realtime_avail_shot_vol`
-45. **Event Type**: Always `SplitCtxEv`
-46. **AlphaID**: Trader ID
-47. **Position Fields**: `realtime_pos = realtime_long_pos`, `realtime_short_pos = 0`, `realtime_avail_shot_vol = realtime_pos`
-48. **Position Calculation**: Based on fill rate applied to intended trades
-comment: and yes, it represents the current realtime pos for every trader! at the BOD(93000000), it reflects the open position (should aligned with the pm's pre-open vpos, sum should be equal for both pm and traders)
+43. **Format**: `event|alphaid|time|ticker|realtime_pos|realtime_long_pos|realtime_short_pos|realtime_avail_shot_vol`
+44. **Event Type**: Always `SplitCtxEv`
+45. **AlphaID**: Trader ID
+46. **Position Fields**: `realtime_pos = realtime_long_pos`, `realtime_short_pos = 0`, `realtime_avail_shot_vol = realtime_pos`
+47. **Position Calculation**: Based on fill rate applied to intended trades
+48. **BOD Alignment**: At market open, positions aligned with PM pre-open vpos (sum should be equal)
 
 ### **VposResEv.csv (PM Virtual Positions)**
 49. **Format**: `event|alphaid|time|ticker|realtime_pos|realtime_long_pos|realtime_short_pos|realtime_avail_shot_vol`
 50. **Event Type**: Always `VposResEv`
 51. **AlphaID**: PM ID
-52. **Virtual Position Logic**: Sum all trader positions for same ticker × random(0.8, 1.2)
+52. **Virtual Position Logic**: Sum all trader positions for same ticker (exactly equal)
 53. **Position Fields**: Same structure as SplitCtxEv
 
 ### **MergedAlphaEv.csv (Consolidated Signals)**
 54. **Format**: `event|alphaid|time|ticker|volume`
 55. **Event Type**: Always `MergedAlphaEv`
 56. **AlphaID Format**: `GRP_{time}_{ticker}`
-57. **Ticker Selection**: Random 500 tickers per time interval (or all if < 500)
-comment to 57: again, no such ticker selection thing!!! treat them all as equal!
-58. **Volume Range**: Random 5000-20000
-comment to 58: no!!!! the merged alpha data should be derived from the InCheckAlphaEv!!!! i.e. sum_of_all(Incehckedalpha) based on how many merged alphaid are there (by default, currently we only merge all pm's alpha to one merged alphaid, and then split it later)
+57. **Volume Calculation**: Sum of ALL PM targets for same ticker/time
+58. **Data Derivation**: DERIVED from InCheckAlphaEv (sum of all PM alphas)
+59. **Coverage**: ALL tickers with PM targets (no filtering)
 
 ### **MarketDataEv.csv (Market Prices)**
 59. **Format**: `event|alphaid|time|ticker|last_price|prev_close_price`
@@ -109,47 +115,81 @@ comment to 58: no!!!! the merged alpha data should be derived from the InCheckAl
 61. **AlphaID**: Always `MARKET`
 
 ## **CROSS-CSV ALIGNMENT RULES**
-62. **Time Consistency**: All CSVs use same time intervals generated from ranges
-63. **Ticker Consistency**: Market data covers superset of all traded tickers
-comment: NO, should cover them all!!!
-64. **PM-Trader Relationship**: Traders get subsets of PM targets (no direct 1:1 mapping)
-comment: yes, but we now assume it's 5 vs 5 (but of course, could be any M:N)
-65. **Position Inheritance**: Trader positions carry forward between time intervals
-66. **PM Position Inheritance**: PM targets carry forward with maintain/close/new logic
-67. **Fill Rate Constraint**: Actual positions always ≤ target positions due to fill rates < 1.0
-comment: also, we assume that, trader will strictly follow the trade signal, that is, if the trade dirction is buy, then next ti, the trader's pos should be only larger than or equal to current ti's
+60. **Time Consistency**: All CSVs use same time intervals generated from ranges
+61. **Complete Coverage**: Market data covers ALL tickers in universe (no filtering)
+62. **PM-Trader Relationship**: M:N relationship (default 5 PMs : 5 Traders)
+63. **Position Inheritance**: Trader positions carry forward between time intervals
+64. **PM Target Evolution**: PM targets evolve with TVR logic
+65. **Fill Rate Constraint**: Actual positions reflect fill rates applied to intended trades
+66. **Direction Consistency**: Trade direction strictly followed (buy = position increases only)
 
 ## **DATA VOLUME ASSUMPTIONS**
-68. **PM Signal Density**: Every PM generates signal for every assigned ticker at every time interval
-69. **Trader Signal Sparsity**: Traders only generate signals for non-zero targets (filtered)
-70. **Position Completeness**: Every trader reports position (including 0) for every ticker they've ever traded
-71. **Market Data Coverage**: Market data generated for active trading tickers only
-comment to above: NOnonononono!! all! the whole universe! no fitlering thing ever involved!
+67. **PM Signal Density**: Every PM generates signal for every assigned ticker at every time interval
+68. **Trader Signal Coverage**: ALL traders get targets for ALL merged signals (no filtering)
+69. **Position Completeness**: Every trader reports position for every ticker at every time interval
+70. **Market Data Coverage**: Market data generated for ALL tickers at ALL time intervals
 
-## **RANDOMIZATION RULES** 
-72. **Ticker Shuffling**: Global ticker list shuffled once before all assignments
-73. **PM Decision Randomness**: Each PM decision (maintain/close/new) is independent random choice
-74. **Fill Rate Randomness**: Each trade gets independent random fill rate within range
-75. **Price Randomness**: Each price movement is independent random walk
-76. **Target Randomness**: New targets are random multiples of 100 in range 100000-500000
+## **RANDOMIZATION RULES**
+71. **Ticker Assignment**: Common tickers (80-90%) + unique tickers per PM
+72. **TVR Randomness**: Each PM target change uses random factor [0.1, 0.6]
+73. **Fill Rate Randomness**: Each trade gets independent random fill rate within range
+74. **Price Randomness**: Each price movement is independent random walk
+75. **Target Randomness**: Initial targets are random multiples of 100 in range 100000-500000
 
-**Total: 76 explicit rules and assumptions used in data generation**
+**Total: 75 explicit rules for test data generation**
+
+> **Framework Note**: These rules generate test data only. The same validation framework will work unchanged on real production data with complex algorithms.
 
 ---
 
-## **Configuration Parameters**
+## **⚙️ Test Data Configuration Parameters**
+
+> **Note**: These control test data generation only. Production data comes from real trading systems.
+
 - `--num-pm`: Number of PMs (default: 5)
 - `--num-trader`: Number of traders (default: 5)
-- `--min-tickers-per-pm`: Minimum tickers per PM per interval (default: 1000)
+- `--num-tickers`: Total ticker universe size (default: 1000)
 - `--ti-ranges`: Time ranges (default: morning + afternoon sessions)
 - `--ti-interval`: Time step in nanoseconds (default: 10000000)
-- `--fill-rate-min/max`: Fill rate range (default: 0.8-0.9)
-- `--output-dir`: Output directory (default: sample_data)
+- `--fill-rate-min/max`: Fill rate range for test execution (default: 0.8-0.9)
+- `--tvr-min/max`: TVR change range for test PM behavior (default: 0.1-0.6)
+- `--output-dir`: Output directory for test CSV files (default: sample_data)
 
 ## **Generated Files**
-- `InCheckAlphaEv.csv`: PM alpha target signals
-- `SplitAlphaEv.csv`: Trader alpha signals  
-- `SplitCtxEv.csv`: Actual trader positions
-- `VposResEv.csv`: PM virtual positions
-- `MergedAlphaEv.csv`: Consolidated alpha signals
-- `MarketDataEv.csv`: Market price data
+- `InCheckAlphaEv.csv`: PM alpha target signals (input to merge)
+- `MergedAlphaEv.csv`: Consolidated alpha signals (sum of PM targets)
+- `SplitAlphaEv.csv`: Trader alpha signals (even split of merged targets)
+- `SplitCtxEv.csv`: Actual trader positions (with fill rates applied)
+- `VposResEv.csv`: PM virtual positions (sum of trader positions)
+- `MarketDataEv.csv`: Market price data (complete universe coverage)
+
+## **📊 Test Data Flow Summary**
+```
+🧪 Test Data Generation Pipeline:
+PM Signals → Simple Merge → Even Split → Fill Rate Execution → Direct Attribution
+InCheckAlphaEv → MergedAlphaEv → SplitAlphaEv → SplitCtxEv → VposResEv
+
+🏭 Production Reality (Future):
+PM Signals → Complex Merge → Risk-Weighted Split → Real Execution → Advanced Attribution
+Same CSV Structure → Same Validation Framework → Same Analysis Results
+```
+
+## **🔄 Algorithm Evolution Roadmap**
+
+### **Phase 1: Basic Structure (Current)**
+- ✅ Simple sum for merge logic
+- ✅ Even division for split logic
+- ✅ Direct sum for position attribution
+- ✅ Realistic fill rates and TVR changes
+
+### **Phase 2: Enhanced Realism (Future)**
+- 🔄 Risk-weighted merge algorithms
+- 🔄 Capacity-aware split allocation
+- 🔄 Multi-strategy position attribution
+- 🔄 Advanced market constraints
+
+### **Phase 3: Production-Level (Target)**
+- 🎯 Complex merge with conflict resolution
+- 🎯 Trader specialization-based splits
+- 🎯 Real-time position attribution
+- 🎯 Full regulatory compliance simulation

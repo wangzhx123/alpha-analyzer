@@ -1,15 +1,53 @@
 # Alpha Analyzer Framework
 
-A framework for analyzing the performance of merge/split alpha trading systems.
+A **production-ready validation framework** for analyzing merge/split alpha trading systems. This framework is designed to validate both simulated test data and real production CSV exports from institutional trading platforms.
 
-## **Overview**
+## **🎯 Project Purpose & Motivation**
 
-The Alpha Analyzer validates and analyzes trading systems where:
-1. Multiple Portfolio Managers (PMs) generate alpha signals (target positions)
-2. A merge system consolidates all PM signals by ticker/time
-3. A split system divides consolidated signals evenly across traders
-4. Traders execute the signals with realistic market constraints (fill rates)
-5. The system tracks execution quality and position consistency
+### **Production Reality**
+In production environments, sophisticated institutional trading platforms generate CSV exports containing:
+- PM alpha signals from multiple Portfolio Managers
+- Merged alpha results from complex consolidation algorithms
+- Split alpha allocations using advanced risk-weighted distribution
+- Trader execution results with real market constraints
+- Position attribution data with complex reverse-mapping logic
+
+### **Framework Goals**
+1. **Validate Production Data**: Ensure data consistency, position balance, and signal flow correctness
+2. **Performance Analysis**: Measure execution quality, fill rates, and system effectiveness
+3. **System Validation**: Detect issues in merge/split logic before they impact trading
+4. **Regulatory Compliance**: Verify T+1 constraints, position limits, and audit trail completeness
+
+### **Current Implementation Status**
+- ✅ **Production-Ready Framework**: Checkers and analyzers designed for real data validation
+- ✅ **Test Data Generation**: Simplified algorithms create structurally correct test data
+- 🔄 **Evolution Path**: Gradually enhance test data generation to match production complexity
+- 🎯 **End Goal**: Framework seamlessly validates real production CSV exports
+
+## **🏗️ System Architecture Overview**
+
+### **Production Merge/Split Alpha Trading System**
+The framework analyzes systems with this architecture:
+1. **Multiple Portfolio Managers (PMs)** generate alpha signals (target positions)
+2. **Merge System** consolidates PM signals using sophisticated algorithms
+3. **Split System** distributes consolidated signals using risk-weighted allocation
+4. **Traders** execute signals with real market constraints and capacity limits
+5. **Position Attribution** reverse-maps trader results back to PM strategies
+
+### **Framework Components**
+```
+🏭 Production System     📊 Analysis Framework     📈 Validation Results
+├─ PM Alpha Generation   ├─ Data Loading           ├─ Fill Rate Analysis
+├─ Merge Processing      ├─ Consistency Checkers   ├─ Position Validation
+├─ Split Allocation      ├─ Performance Analyzers  ├─ Signal Flow Checks
+├─ Trader Execution      ├─ Interactive Reporting  ├─ System Health Metrics
+└─ Position Attribution  └─ Export Generation      └─ Compliance Validation
+```
+
+### **Current vs Production Data**
+- **Test Data** (generated): Uses simplified algorithms for merge/split logic
+- **Production Data** (future): Complex institutional trading system exports
+- **Framework** (current): Handles both - designed for production complexity
 
 ## **Quick Start**
 
@@ -56,10 +94,11 @@ InCheck  MergedAlpha  Split  SplitCtx  VposRes  Analysis
 - **Traders**: Execute signals with realistic fill rates (0.8-0.9)
 - **Position Tracking**: Ensures PM virtual positions = Sum(trader positions)
 
-### **Data Files**
+### **📁 Data Files (CSV Format)**
+
+> **Note**: These files can be either generated test data (current) or production system exports (future)
 
 | File | Description | Key Field |
-|------|-------------|-----------|
 | `InCheckAlphaEv.csv` | PM alpha signals | Target positions |
 | `MergedAlphaEv.csv` | Consolidated signals | Sum of PM targets |
 | `SplitAlphaEv.csv` | Trader alpha signals | Even split of merged |
@@ -85,9 +124,10 @@ InCheck  MergedAlpha  Split  SplitCtx  VposRes  Analysis
 - **Direction Consistency**: Validates buy/sell adherence
 - **Temporal Patterns**: Identifies performance trends over time
 
-## **Configuration**
+## **⚙️ Configuration**
 
-### **Data Generation Parameters**
+### **Test Data Generation Parameters**
+> **Note**: These parameters control the simplified test data generation. Production systems use more complex algorithms.
 ```bash
 --num-pm            # Number of Portfolio Managers (default: 5)
 --num-trader        # Number of traders (default: 5) 
@@ -107,7 +147,9 @@ InCheck  MergedAlpha  Split  SplitCtx  VposRes  Analysis
 --output            # Report output directory (default: /tmp)
 ```
 
-## **Key Concepts**
+## **🧠 Key Concepts**
+
+> **Universal Concepts**: These apply to both test data and production systems
 
 ### **Alpha = Target Position**
 - Alpha signals represent **target positions**, not trade volumes
@@ -152,11 +194,35 @@ python3 main.py --csv-dir sample_data --analyze --ticker 000001.SSE --ti 9400000
 - Detailed analysis of specific time intervals
 - Useful for investigating execution anomalies
 
-## **Documentation**
+## **📚 Documentation**
 
-- `SYSTEM_UNDERSTANDING.md` - Detailed system architecture and concepts
-- `DATA_GENERATION_RULES.md` - Historical rules and corrections applied
-- `ALPHA_POSITION_CONCEPT.md` - Core concept explanations
+- `SYSTEM_UNDERSTANDING.md` - Framework architecture and evolution path
+- `TARGET_SYSTEM_ANALYSIS.md` - Production system specification (target architecture)
+- `DATA_GENERATION_RULES.md` - Test data generation rules (current simplified algorithms)
+- `ALPHA_POSITION_CONCEPT.md` - Universal concepts for both test and production data
+- `CHECKER_DEV_GUIDE.md` - Guide for developing validation checkers
+
+## **🚀 Evolution Roadmap**
+
+### **Phase 1: Foundation (Current)**
+- ✅ Production-ready validation framework
+- ✅ Basic test data generation with correct structure
+- ✅ Core checkers and analyzers
+
+### **Phase 2: Enhanced Simulation**
+- 🔄 More realistic merge algorithms (risk-weighted, capacity-aware)
+- 🔄 Advanced split logic (trader specialization, market impact)
+- 🔄 Complex position attribution (multi-strategy reverse mapping)
+
+### **Phase 3: Production Integration**
+- 🎯 Validate real production CSV exports
+- 🎯 Real-time monitoring and alerting
+- 🎯 Advanced performance analytics
+
+### **Phase 4: Optimization**
+- 🎯 System performance recommendations
+- 🎯 Algorithmic trading strategy insights
+- 🎯 Risk management enhancements
 
 ## **Examples**
 
