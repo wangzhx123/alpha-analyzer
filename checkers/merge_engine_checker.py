@@ -223,18 +223,21 @@ class MergeEngineChecker(BaseChecker):
         # Basic validation: Check if allocation is consistent
         # (This is where predefined rules would be checked)
 
-        # Example rule: Each ticker should be allocated to exactly 2 traders
+        # Rule 18, 21: Each ticker should be allocated to ALL traders (5 in test data)
         allocation_counts = defaultdict(int)
         for _, row in split_df.iterrows():
             key = (row["time"], row["ticker"])
             allocation_counts[key] += 1
 
+        # Get expected trader count from data
+        expected_traders = len(split_df['alphaid'].unique())
+
         for key, count in allocation_counts.items():
-            if count != 2:  # Expecting exactly 2 traders per ticker
+            if count != expected_traders:  # Expecting ALL traders per ticker
                 time_val, ticker = key
                 issues.append(
                     f"Allocation rule violation at ti={time_val}, ticker={ticker}: "
-                    f"Expected 2 traders, got {count}"
+                    f"Expected {expected_traders} traders (Rule 18: ALL traders participate), got {count}"
                 )
 
         return issues

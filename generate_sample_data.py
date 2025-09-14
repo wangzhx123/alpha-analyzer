@@ -140,24 +140,31 @@ def generate_incheck_alpha_data(pm_tickers, time_intervals, tvr_range):
     
     return data, pm_positions
 
-def generate_merged_alpha_data(pm_positions, time_intervals, all_tickers):
-    """Generate MergedAlphaEv by summing ALL PM alphas for each ticker/time"""
+def generate_merged_alpha_data(incheck_data, time_intervals, all_tickers):
+    """Generate MergedAlphaEv by summing ALL PM alphas for each ticker/time from InCheck data"""
     data = []
-    
-    for ti in time_intervals:
-        for ticker in all_tickers:
-            # Sum all PM targets for this ticker at this time
-            total_target = 0
-            for pm_id, positions in pm_positions.items():
-                if ticker in positions:
-                    total_target += positions[ticker]
-            
-            if total_target > 0:  # Only include if there's actual target
-                alpha_id = f"GRP_{ti}_{ticker}"
-                data.append([
-                    "MergedAlphaEv", alpha_id, str(ti), ticker, str(total_target)
-                ])
-    
+
+    # Create lookup from InCheck data: {(time, ticker): total_target}
+    merged_targets = {}
+
+    for record in incheck_data:
+        _, pm_id, time_str, ticker, volume_str = record
+        ti = int(time_str)
+        volume = int(volume_str)
+
+        key = (ti, ticker)
+        if key not in merged_targets:
+            merged_targets[key] = 0
+        merged_targets[key] += volume
+
+    # Generate merged records only for non-zero targets
+    for (ti, ticker), total_target in merged_targets.items():
+        if total_target > 0:
+            alpha_id = f"GRP_{ti}_{ticker}"
+            data.append([
+                "MergedAlphaEv", alpha_id, str(ti), ticker, str(total_target)
+            ])
+
     return data
 
 def generate_split_alpha_data(merged_targets, trader_ids, time_intervals, all_tickers):
@@ -320,7 +327,7 @@ def main():
     # Generate all data in correct order
     market_data = generate_market_data(time_intervals, all_tickers)
     incheck_data, pm_positions = generate_incheck_alpha_data(pm_tickers, time_intervals, tvr_range)
-    merged_data = generate_merged_alpha_data(pm_positions, time_intervals, all_tickers)
+    merged_data = generate_merged_alpha_data(incheck_data, time_intervals, all_tickers)
     split_alpha_data, trader_targets = generate_split_alpha_data(merged_data, trader_ids, time_intervals, all_tickers)
     split_ctx_data, actual_positions = generate_split_ctx_data(split_alpha_data, trader_ids, time_intervals, all_tickers, fill_rate_range)
     vpos_data = generate_vpos_data(actual_positions, pm_tickers, time_intervals)
